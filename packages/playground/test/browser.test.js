@@ -89,3 +89,40 @@ test("swift-syntax parses edited source in-tab", { timeout: 180_000 }, async (t)
   assert.match(outline, /struct\s*Point/);
   assert.match(outline, /var\s*x/);
 });
+
+/**
+ * The compile path degrades honestly. Until the toolchain artifacts are built and served
+ * at /toolchain, "Compile & Run" must say so plainly — and the prebuilt module must keep
+ * working, so the page is never dead.
+ */
+test("Compile & Run reports a missing toolchain instead of failing obscurely", {
+  timeout: 180_000,
+}, async (t) => {
+  const server = await preview({
+    root: new URL("..", import.meta.url).pathname,
+    preview: { port: 4175, strictPort: true },
+  });
+  t.after(() => server.close());
+
+  const browser = await chromium.launch({ executablePath: findChromium(), args: ["--no-sandbox"] });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  await page.goto(server.resolvedUrls.local[0], { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    () => document.getElementById("run-status")?.textContent?.includes("exit"),
+    { timeout: 120_000 },
+  );
+
+  await page.click("#compile");
+  await page.waitForFunction(
+    () => document.getElementById("output")?.textContent?.includes("toolchain"),
+    { timeout: 60_000 },
+  );
+
+  const output = await page.textContent("#output");
+  assert.match(output, /toolchain is not built yet/);
+  assert.match(output, /20-llvm-wasm\.sh/, "it names the script that produces it");
+  // The page stays usable.
+  assert.equal(await page.isEnabled("#run"), true);
+});

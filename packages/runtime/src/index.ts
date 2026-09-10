@@ -1,6 +1,7 @@
 export { VirtualFS } from "./vfs.js";
 export { runWasi } from "./run.js";
 export { untar } from "./tar.js";
+export { WasmBackend } from "./wasm-backend.js";
 export type { UntarOptions, UntarResult } from "./tar.js";
 export type { RunOptions, RunResult } from "./run.js";
 export {

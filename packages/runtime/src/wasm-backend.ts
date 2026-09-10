@@ -1,0 +1,141 @@
+import type { CompileRequest, CompileResult, CompilerBackend } from "./backend.js";
+import { VirtualFS } from "./vfs.js";
+import { runWasi } from "./run.js";
+import { untar } from "./tar.js";
+import { frontendArgs, linkArgs, parseDiagnostics } from "./pipeline.js";
+
+/**
+ * Compiles Swift entirely inside the browser tab by driving the wasm toolchain.
+ *
+ * The pipeline mirrors what a native `swiftc` does, minus the driver: there is no
+ * fork/exec under WASI, so each tool is invoked as its own wasm module against a shared
+ * VirtualFS, and the frontend is given an explicit argument vector rather than being
+ * spawned.
+ *
+ *   swift-frontend.wasm  -frontend -c main.swift  ->  /build/main.o
+ *   wasm-ld.wasm         /build/main.o + stdlib   ->  /build/program.wasm
+ *
+ * Those argument vectors live in @yukibana/runtime's pipeline module, captured from a
+ * real `swiftc -v` run and verified by replaying them against the packed sysroot.
+ *
+ * Until `swift-frontend.wasm` exists (Stage 3 of the pipeline), `ready()` rejects with
+ * an explanatory error and callers fall back — the playground says the toolchain is not
+ * available yet and keeps running its prebuilt module.
+ */
+export class WasmBackend implements CompilerBackend {
+  readonly id = "wasm";
+  readonly description: string;
+
+  private toolchain?: Promise<Toolchain>;
+
+  constructor(
+    readonly swiftVersion: string,
+    private readonly toolchainUrl: string,
+  ) {
+    this.description = `in-browser (Swift ${swiftVersion})`;
+  }
+
+  ready(): Promise<void> {
+    return this.load().then(() => undefined);
+  }
+
+  private load(): Promise<Toolchain> {
+    // Fetch and compile once per tab: for modules this size, compilation dominates, and
+    // the sysroot is tens of megabytes that must not be re-unpacked per build.
+    this.toolchain ??= (async () => {
+      const [frontend, linker, sysrootArchive] = await Promise.all([
+        this.fetchModule("swift-frontend.wasm"),
+        this.fetchModule("wasm-ld.wasm"),
+        this.fetchBytes("swift-sysroot-core.tar"),
+      ]);
+      return { frontend, linker, sysroot: sysrootArchive };
+    })();
+    return this.toolchain;
+  }
+
+  async compile(request: CompileRequest): Promise<CompileResult> {
+    const started = Date.now();
+    const { frontend, linker, sysroot } = await this.load();
+
+    const fs = new VirtualFS();
+    untar(sysroot, fs, { prefix: "/sysroot", stripComponents: 0, readonly: true });
+    for (const [path, contents] of Object.entries(request.sources)) {
+      fs.writeFile(path, contents);
+    }
+    fs.mkdirp("/build");
+
+    const sources = Object.keys(request.sources);
+    const objects: string[] = [];
+    const log: string[] = [];
+
+    for (const source of sources) {
+      const object = `/build/${basename(source)}.o`;
+      const run = await runWasi(frontend, {
+        args: frontendArgs({
+          sources,
+          primary: source,
+          moduleName: "main",
+          output: object,
+          extraArgs: request.extraArgs,
+        }),
+        fs,
+      });
+      log.push(run.stderr);
+      if (run.exitCode !== 0) {
+        return {
+          success: false,
+          diagnostics: parseDiagnostics(log.join("")),
+          log: log.join(""),
+          durationMs: Date.now() - started,
+        };
+      }
+      objects.push(object);
+    }
+
+    const link = await runWasi(linker, {
+      args: linkArgs({ objects, output: "/build/program.wasm" }),
+      fs,
+    });
+    log.push(link.stderr);
+
+    return {
+      success: link.exitCode === 0,
+      wasm: link.exitCode === 0 ? fs.readFile("/build/program.wasm") : undefined,
+      diagnostics: parseDiagnostics(log.join("")),
+      log: log.join(""),
+      durationMs: Date.now() - started,
+    };
+  }
+
+  private async fetchModule(name: string): Promise<WebAssembly.Module> {
+    const response = await fetch(`${this.toolchainUrl}/${name}`);
+    if (!response.ok) {
+      throw new Error(
+        `${name} is not available (${response.status}). ` +
+          "Build it with toolchain/scripts/20-llvm-wasm.sh and 30-swift-frontend-wasm.sh.",
+      );
+    }
+    return WebAssembly.compileStreaming(response);
+  }
+
+  private async fetchBytes(name: string): Promise<Uint8Array> {
+    const response = await fetch(`${this.toolchainUrl}/${name}`);
+    if (!response.ok) {
+      throw new Error(
+        `${name} is not available (${response.status}). ` +
+          "Build it with toolchain/scripts/40-sysroot-pack.sh.",
+      );
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+}
+
+interface Toolchain {
+  frontend: WebAssembly.Module;
+  linker: WebAssembly.Module;
+  sysroot: Uint8Array;
+}
+
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}

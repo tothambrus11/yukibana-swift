@@ -32,13 +32,15 @@
       <section class="pane">
         <h2>
           Program output
-          <button id="run" disabled>Run</button>
+          <button id="compile">Compile &amp; Run</button>
+          <button id="run" disabled>Run prebuilt</button>
           <span id="run-status" class="note"></span>
         </h2>
-        <p class="note caveat">
-          Runs a <strong>prebuilt</strong> module compiled from
-          <code>examples/hello</code> by the Swift SDK for WebAssembly. Compiling the text on
-          the left in-tab needs <code>swift-frontend.wasm</code> — Stage 3 of the pipeline.
+        <p class="note caveat" id="backend-note">
+          <strong>Compile &amp; Run</strong> compiles the editor's text in this tab with
+          <code>swift-frontend.wasm</code> and <code>wasm-ld.wasm</code>.
+          <strong>Run prebuilt</strong> runs a module compiled ahead of time from
+          <code>examples/hello</code>, which needs no toolchain.
         </p>
         <pre id="output" class="terminal"></pre>
       </section>

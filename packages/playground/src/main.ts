@@ -1,5 +1,6 @@
 import { VirtualFS, runWasi } from "@yukibana/runtime";
 import type { ParseRequest, ParseResponse } from "./parse-worker.js";
+import type { CompileRequestMessage, CompileResponseMessage } from "./compile-worker.js";
 
 const editor = document.getElementById("editor") as HTMLTextAreaElement;
 const parseStatus = document.getElementById("parse-status") as HTMLSpanElement;
@@ -8,6 +9,8 @@ const outlineList = document.getElementById("outline") as HTMLUListElement;
 const outputEl = document.getElementById("output") as HTMLPreElement;
 const runStatus = document.getElementById("run-status") as HTMLSpanElement;
 const runButton = document.getElementById("run") as HTMLButtonElement;
+const compileButton = document.getElementById("compile") as HTMLButtonElement;
+const backendNote = document.getElementById("backend-note") as HTMLParagraphElement;
 
 interface ParseOutput {
   ok: boolean;
@@ -141,6 +144,80 @@ async function loadProgram(): Promise<void> {
   runButton.addEventListener("click", run);
   await run();
 }
+
+// --- in-browser compilation ---------------------------------------------------
+
+const compileWorker = new Worker(new URL("./compile-worker.ts", import.meta.url), {
+  type: "module",
+});
+let nextCompileId = 0;
+let pendingCompile: ((response: CompileResponseMessage) => void) | undefined;
+
+compileWorker.addEventListener("message", (event: MessageEvent<CompileResponseMessage>) => {
+  pendingCompile?.(event.data);
+  pendingCompile = undefined;
+});
+
+function compile(source: string): Promise<CompileResponseMessage> {
+  return new Promise((resolve) => {
+    pendingCompile = resolve;
+    const request: CompileRequestMessage = { id: nextCompileId++, source };
+    compileWorker.postMessage(request);
+  });
+}
+
+async function compileAndRun(): Promise<void> {
+  compileButton.disabled = true;
+  runButton.disabled = true;
+  outputEl.textContent = "";
+  runStatus.textContent = "compiling in this tab…";
+
+  const result = await compile(editor.value);
+
+  if (result.unavailable) {
+    // The toolchain has not been built yet; say exactly that rather than failing oddly.
+    runStatus.textContent = "toolchain not available";
+    backendNote.textContent = result.unavailable;
+    outputEl.textContent =
+      "The in-browser toolchain is not built yet.\n" +
+      "Run toolchain/scripts/20-llvm-wasm.sh, 30-swift-frontend-wasm.sh and\n" +
+      "40-sysroot-pack.sh, then serve their output at /toolchain.\n\n" +
+      '"Run prebuilt" still works — it needs no toolchain.';
+    compileButton.disabled = false;
+    runButton.disabled = false;
+    return;
+  }
+
+  for (const diagnostic of result.diagnostics) {
+    const where =
+      diagnostic.line === undefined ? "" : `${diagnostic.line}:${diagnostic.column ?? 0}: `;
+    outputEl.textContent += `${where}${diagnostic.severity}: ${diagnostic.message}\n`;
+  }
+
+  if (!result.ok || !result.wasm) {
+    runStatus.textContent = `compilation failed in ${result.durationMs} ms`;
+    if (result.diagnostics.length === 0) outputEl.textContent += result.log;
+    compileButton.disabled = false;
+    runButton.disabled = false;
+    return;
+  }
+
+  runStatus.textContent = `compiled in ${result.durationMs} ms, running…`;
+  const program = await runWasi(new Uint8Array(result.wasm), {
+    args: ["main.wasm"],
+    fs: new VirtualFS(),
+    onStdout: appendOutput,
+    onStderr: appendOutput,
+  });
+  runStatus.textContent =
+    `compiled in ${result.durationMs} ms, exit ${program.exitCode} in ${program.durationMs} ms`;
+  compileButton.disabled = false;
+  runButton.disabled = false;
+}
+
+compileButton.addEventListener("click", () => {
+  void compileAndRun();
+});
 
 async function main(): Promise<void> {
   editor.value = await fetch("/hello.swift").then((r) => r.text());
