@@ -59,10 +59,14 @@ export class WasmBackend implements CompilerBackend {
 
     const fs = new VirtualFS();
     untar(sysroot, fs, { prefix: "/sysroot", stripComponents: 0, readonly: true });
+    fs.mkdirp("/tmp");
     for (const [path, contents] of Object.entries(request.sources)) {
       fs.writeFile(path, contents);
     }
     fs.mkdirp("/build");
+
+    // Clang builds the SwiftShims module implicitly and needs somewhere to put it.
+    fs.mkdirp("/build/modulecache");
 
     const sources = Object.keys(request.sources);
     const objects: string[] = [];
@@ -76,9 +80,10 @@ export class WasmBackend implements CompilerBackend {
           primary: source,
           moduleName: "main",
           output: object,
-          extraArgs: request.extraArgs,
+          extraArgs: ["-module-cache-path", "/build/modulecache", ...(request.extraArgs ?? [])],
         }),
         fs,
+        env: ["TMPDIR=/tmp", "HOME=/tmp"],
       });
       log.push(run.stderr);
       if (run.exitCode !== 0) {
