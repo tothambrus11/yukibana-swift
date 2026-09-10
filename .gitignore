@@ -9,3 +9,4 @@ toolchain/src/
 # Stage 0 artifacts staged by scripts/build-example.sh
 packages/playground/public/hello.wasm
 packages/playground/public/hello.swift
+packages/playground/public/swift-parse.wasm

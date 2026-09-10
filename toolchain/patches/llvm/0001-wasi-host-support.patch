@@ -1,0 +1,168 @@
+diff --git a/llvm/include/llvm/ADT/bit.h b/llvm/include/llvm/ADT/bit.h
+index d6e33c3e6..211e28be1 100644
+--- a/llvm/include/llvm/ADT/bit.h
++++ b/llvm/include/llvm/ADT/bit.h
+@@ -30,7 +30,8 @@
+ 
+ #if defined(__linux__) || defined(__GNU__) || defined(__HAIKU__) ||            \
+     defined(__Fuchsia__) || defined(__EMSCRIPTEN__) || defined(__NetBSD__) ||  \
+-    defined(__OpenBSD__) || defined(__DragonFly__) || defined(__managarm__)
++    defined(__OpenBSD__) || defined(__DragonFly__) || defined(__managarm__) ||  \
++    defined(__wasi__)
+ #include <endian.h>
+ #elif defined(_AIX)
+ #include <sys/machine.h>
+diff --git a/llvm/lib/Support/CrashRecoveryContext.cpp b/llvm/lib/Support/CrashRecoveryContext.cpp
+index fc30d4215..138d07618 100644
+--- a/llvm/lib/Support/CrashRecoveryContext.cpp
++++ b/llvm/lib/Support/CrashRecoveryContext.cpp
+@@ -14,7 +14,9 @@
+ #include "llvm/Support/thread.h"
+ #include <cassert>
+ #include <mutex>
++#if !defined(__wasi__)
+ #include <setjmp.h>
++#endif
+ 
+ using namespace llvm;
+ 
+@@ -31,7 +33,9 @@ struct CrashRecoveryContextImpl {
+   const CrashRecoveryContextImpl *Next;
+ 
+   CrashRecoveryContext *CRC;
++#if !defined(__wasi__)
+   ::jmp_buf JumpBuffer;
++#endif
+   volatile unsigned Failed : 1;
+   unsigned SwitchedThread : 1;
+   unsigned ValidJumpBuffer : 1;
+@@ -73,8 +77,10 @@ public:
+     CRC->RetCode = RetCode;
+ 
+     // Jump back to the RunSafely we were called under.
++#if !defined(__wasi__)
+     if (ValidJumpBuffer)
+       longjmp(JumpBuffer, 1);
++#endif
+ 
+     // Otherwise let the caller decide of the outcome of the crash. Currently
+     // this occurs when using SEH on Windows with MSVC or clang-cl.
+@@ -329,6 +335,13 @@ static void uninstallExceptionOrSignalHandlers() {
+   }
+ }
+ 
++#elif defined(__wasi__)
++
++// WASI has no signals; there is nothing to install.
++
++static void installExceptionOrSignalHandlers() {}
++static void uninstallExceptionOrSignalHandlers() {}
++
+ #else // !_WIN32
+ 
+ // Generic POSIX implementation.
+@@ -417,10 +430,12 @@ bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
+     CrashRecoveryContextImpl *CRCI = new CrashRecoveryContextImpl(this);
+     Impl = CRCI;
+ 
++#if !defined(__wasi__)
+     CRCI->ValidJumpBuffer = true;
+     if (setjmp(CRCI->JumpBuffer) != 0) {
+       return false;
+     }
++#endif
+   }
+ 
+   Fn();
+@@ -469,6 +484,9 @@ bool CrashRecoveryContext::throwIfCrash(int RetCode) {
+     return false;
+ #if defined(_WIN32)
+   ::RaiseException(RetCode, 0, 0, NULL);
++#elif defined(__wasi__)
++  // No signals to re-raise; the caller sees the crash through the return code.
++  llvm::sys::unregisterHandlers();
+ #else
+   llvm::sys::unregisterHandlers();
+   raise(RetCode - 128);
+diff --git a/llvm/lib/Support/LockFileManager.cpp b/llvm/lib/Support/LockFileManager.cpp
+index cdded5110..8c20b6e8e 100644
+--- a/llvm/lib/Support/LockFileManager.cpp
++++ b/llvm/lib/Support/LockFileManager.cpp
+@@ -111,7 +111,7 @@ static std::error_code getHostID(SmallVectorImpl<char> &HostID) {
+ }
+ 
+ bool LockFileManager::processStillExecuting(StringRef HostID, int PID) {
+-#if LLVM_ON_UNIX && !defined(__ANDROID__)
++#if LLVM_ON_UNIX && !defined(__ANDROID__) && !defined(__wasi__)
+   SmallString<256> StoredHostID;
+   if (getHostID(StoredHostID))
+     return true; // Conservatively assume it's executing on error.
+diff --git a/llvm/lib/Support/ProgramStack.cpp b/llvm/lib/Support/ProgramStack.cpp
+index e48265afb..e7fa0885e 100644
+--- a/llvm/lib/Support/ProgramStack.cpp
++++ b/llvm/lib/Support/ProgramStack.cpp
+@@ -40,7 +40,7 @@ uintptr_t llvm::getStackPointer() {
+ }
+ 
+ unsigned llvm::getDefaultStackSize() {
+-#ifdef LLVM_ON_UNIX
++#if defined(LLVM_ON_UNIX) && !defined(__wasi__)
+   rlimit RL;
+   getrlimit(RLIMIT_STACK, &RL);
+   return RL.rlim_cur;
+diff --git a/llvm/lib/Support/Unix/Unix.h b/llvm/lib/Support/Unix/Unix.h
+index a1d44c69a..93e432005 100644
+--- a/llvm/lib/Support/Unix/Unix.h
++++ b/llvm/lib/Support/Unix/Unix.h
+@@ -30,7 +30,9 @@
+ #include <cstring>
+ #include <string>
+ #include <sys/types.h>
++#if !defined(__wasi__)
+ #include <sys/wait.h>
++#endif
+ 
+ #ifdef HAVE_UNISTD_H
+ #include <unistd.h>
+diff --git a/llvm/lib/Support/Unix/Watchdog.inc b/llvm/lib/Support/Unix/Watchdog.inc
+index b33e52d88..b18f0a40c 100644
+--- a/llvm/lib/Support/Unix/Watchdog.inc
++++ b/llvm/lib/Support/Unix/Watchdog.inc
+@@ -19,13 +19,13 @@
+ namespace llvm {
+ namespace sys {
+ Watchdog::Watchdog(unsigned int seconds) {
+-#ifdef HAVE_UNISTD_H
++#if defined(HAVE_UNISTD_H) && !defined(__wasi__)
+   alarm(seconds);
+ #endif
+ }
+ 
+ Watchdog::~Watchdog() {
+-#ifdef HAVE_UNISTD_H
++#if defined(HAVE_UNISTD_H) && !defined(__wasi__)
+   alarm(0);
+ #endif
+ }
+diff --git a/llvm/lib/Support/raw_socket_stream.cpp b/llvm/lib/Support/raw_socket_stream.cpp
+index fd1c68167..258e7182a 100644
+--- a/llvm/lib/Support/raw_socket_stream.cpp
++++ b/llvm/lib/Support/raw_socket_stream.cpp
+@@ -41,6 +41,11 @@
+ 
+ using namespace llvm;
+ 
++// WASI has no Unix-domain sockets: `sockaddr_un` exists in wasi-libc but carries no
++// `sun_path`, and there is no socket()/bind()/listen(). Nothing in a browser toolchain
++// listens on a socket, so the implementation is compiled out entirely; any future user
++// of these symbols on wasm gets a link error rather than silent breakage.
++#if !defined(__wasi__)
+ #ifdef _WIN32
+ WSABalancer::WSABalancer() {
+   WSADATA WsaData;
+@@ -356,3 +361,5 @@ ssize_t raw_socket_stream::read(char *Ptr, size_t Size,
+   }
+   return raw_fd_stream::read(Ptr, Size);
+ }
++
++#endif // !defined(__wasi__)

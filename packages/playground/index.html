@@ -9,19 +9,37 @@
   <body>
     <header>
       <h1>Yukibana</h1>
-      <p class="tagline">Swift compiled to WebAssembly, executed in this tab. No server.</p>
+      <p class="tagline">
+        Swift parsed and executed as WebAssembly, in this tab. Nothing is sent to a server.
+      </p>
     </header>
     <main>
       <section class="pane">
-        <h2>Source</h2>
-        <pre id="source">loading…</pre>
+        <h2>
+          Editor
+          <span id="parse-status" class="note">loading parser…</span>
+        </h2>
+        <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
       </section>
+
+      <section class="pane">
+        <h2>Diagnostics <span class="note">swift-syntax, compiled to wasm</span></h2>
+        <ul id="diagnostics" class="list"></ul>
+        <h2 class="section-break">Outline</h2>
+        <ul id="outline" class="list"></ul>
+      </section>
+
       <section class="pane">
         <h2>
-          Output
+          Program output
           <button id="run" disabled>Run</button>
-          <span id="status"></span>
+          <span id="run-status" class="note"></span>
         </h2>
+        <p class="note caveat">
+          Runs a <strong>prebuilt</strong> module compiled from
+          <code>examples/hello</code> by the Swift SDK for WebAssembly. Compiling the text on
+          the left in-tab needs <code>swift-frontend.wasm</code> — Stage 3 of the pipeline.
+        </p>
         <pre id="output" class="terminal"></pre>
       </section>
     </main>

@@ -36,16 +36,56 @@ test("Swift-compiled wasm runs in a browser tab", { timeout: 180_000 }, async (t
 
   await page.goto(server.resolvedUrls.local[0], { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
-    () => document.getElementById("status")?.textContent?.includes("exit"),
+    () => document.getElementById("run-status")?.textContent?.includes("exit"),
     { timeout: 120_000 },
   );
 
   const output = await page.textContent("#output");
-  const status = await page.textContent("#status");
+  const status = await page.textContent("#run-status");
 
   assert.deepEqual(pageErrors, []);
   assert.match(output, /Hello from Swift on WebAssembly, browser!/);
   assert.match(output, /fib: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34/);
   assert.match(output, /caught: empty/);
   assert.match(status, /^exit 0 /);
+});
+
+/**
+ * Proof of the language-service half: swift-syntax, cross-compiled to wasm, producing
+ * real diagnostics and an outline for text typed into the page — in a worker, with no
+ * server round-trip.
+ */
+test("swift-syntax parses edited source in-tab", { timeout: 180_000 }, async (t) => {
+  const server = await preview({
+    root: new URL("..", import.meta.url).pathname,
+    preview: { port: 4174, strictPort: true },
+  });
+  t.after(() => server.close());
+
+  const browser = await chromium.launch({ executablePath: findChromium(), args: ["--no-sandbox"] });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  await page.goto(server.resolvedUrls.local[0], { waitUntil: "domcontentloaded" });
+
+  // The seeded example is valid Swift.
+  await page.waitForFunction(
+    () => document.getElementById("diagnostics")?.textContent?.includes("No syntax errors"),
+    { timeout: 120_000 },
+  );
+
+  // Break it, and the real parser should say so, with a fix-it.
+  await page.fill("#editor", "struct Point {\n  var x: Int\n}\nlet p = Point(x: 3\n");
+  await page.waitForFunction(
+    () => document.getElementById("diagnostics")?.textContent?.includes("error:"),
+    { timeout: 60_000 },
+  );
+
+  const diagnostics = await page.textContent("#diagnostics");
+  assert.match(diagnostics, /4:19 error: expected '\)' to end function call/);
+  assert.match(diagnostics, /fix-it: insert '\)'/);
+
+  const outline = await page.textContent("#outline");
+  assert.match(outline, /struct\s*Point/);
+  assert.match(outline, /var\s*x/);
 });
