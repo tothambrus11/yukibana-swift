@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yukibana — Swift in your browser</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Yukibana</h1>
+      <p class="tagline">Swift compiled to WebAssembly, executed in this tab. No server.</p>
+    </header>
+    <main>
+      <section class="pane">
+        <h2>Source</h2>
+        <pre id="source">loading…</pre>
+      </section>
+      <section class="pane">
+        <h2>
+          Output
+          <button id="run" disabled>Run</button>
+          <span id="status"></span>
+        </h2>
+        <pre id="output" class="terminal"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

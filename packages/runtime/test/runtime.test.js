@@ -39,3 +39,14 @@ test("runWasi reports a non-zero exit status instead of throwing", async () => {
   assert.equal(result.exitCode, 2);
   assert.match(result.stderr, /fopen/);
 });
+
+test("untar unpacks an archive into a VirtualFS", async () => {
+  const { untar } = await import("../dist/index.js");
+  const archive = await readFile(fixture("sample.tar"));
+  const { fs, files } = untar(new Uint8Array(archive), undefined, { stripComponents: 1 });
+  assert.equal(fs.readTextFile("/a.txt"), "hello tar\n");
+  assert.equal(fs.readTextFile("/sub/b.txt"), "nested\n");
+  // Symlinks are materialised as copies, since the VirtualFS has no link inode.
+  assert.equal(fs.readTextFile("/link.txt"), "hello tar\n");
+  assert.ok(files.includes("/sub/b.txt"));
+});

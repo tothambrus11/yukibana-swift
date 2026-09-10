@@ -1,0 +1,31 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0f1420;
+  --panel: #171d2c;
+  --fg: #e6ebf5;
+  --muted: #8d9ab5;
+  --accent: #f05138; /* Swift orange */
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+header { margin-bottom: 20px; }
+h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+h1::before { content: "❄ "; color: var(--accent); }
+.tagline { margin: 4px 0 0; color: var(--muted); }
+main { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.pane { background: var(--panel); border: 1px solid #24304a; border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.pane h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+pre { margin: 0; overflow-x: auto; font: 13px/1.55 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre; }
+.terminal { min-height: 180px; }
+button {
+  background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+  padding: 4px 12px; font: inherit; font-size: 12px; cursor: pointer;
+}
+button:disabled { opacity: 0.45; cursor: default; }
+#status { color: var(--muted); font-weight: normal; text-transform: none; letter-spacing: 0; }
