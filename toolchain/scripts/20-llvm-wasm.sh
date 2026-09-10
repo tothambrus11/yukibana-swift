@@ -72,20 +72,21 @@ cmake -G Ninja -S "${LLVM_SRC}/llvm" -B "$BUILD_DIR" \
   -DCMAKE_C_FLAGS="${WASI_EMULATION_DEFINES}" \
   -DCMAKE_EXE_LINKER_FLAGS="${WASI_EMULATION_LIBS} -Wl,-z,stack-size=${STACK_SIZE}"
 
+# What Stage 30 actually links: LLVM and clang *libraries*, plus lld. Deliberately NOT
+# the clang driver binary — it drags in cc1_main's getrlimit and Apple's socket-based
+# cc1depscan daemon, neither of which exists on WASI, for a binary swift-frontend never
+# calls. The aggregate targets keep this robust across LLVM versions.
 targets=(lld)
-[[ "$LLVM_PROJECTS" == *clang* ]] && targets+=(clang)
+if [[ "$LLVM_PROJECTS" == *clang* ]]; then
+  targets+=(llvm-libraries clang-libraries)
+fi
 
-log "building ${targets[*]} with ${JOBS} jobs (hours for clang)"
+log "building ${targets[*]} with ${JOBS} jobs (hours, with clang)"
 ninja -C "$BUILD_DIR" -j "$JOBS" "${targets[@]}"
 
 # lld is a multiplexed driver; invoked as wasm-ld it links wasm.
 install -D "${BUILD_DIR}/bin/lld" "${YUKIBANA_OUT}/wasm-ld.wasm"
 log "wrote ${YUKIBANA_OUT}/wasm-ld.wasm ($(du -h "${YUKIBANA_OUT}/wasm-ld.wasm" | cut -f1))"
 
-if [[ "$LLVM_PROJECTS" == *clang* ]]; then
-  install -D "${BUILD_DIR}/bin/clang" "${YUKIBANA_OUT}/clang.wasm"
-  log "wrote ${YUKIBANA_OUT}/clang.wasm ($(du -h "${YUKIBANA_OUT}/clang.wasm" | cut -f1))"
-  # Stage 30 configures against this tree's CMake packages; install so LLVM_DIR/Clang_DIR
-  # resolve without pointing into the build directory.
-  ninja -C "$BUILD_DIR" -j "$JOBS" install
-fi
+# Stage 30 configures against this build tree's CMake packages directly, so there is
+# nothing to install.

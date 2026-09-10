@@ -1,3 +1,20 @@
+diff --git a/clang/include/clang/Support/Compiler.h b/clang/include/clang/Support/Compiler.h
+index e1ae3eda4..e23807ff6 100644
+--- a/clang/include/clang/Support/Compiler.h
++++ b/clang/include/clang/Support/Compiler.h
+@@ -54,7 +54,11 @@
+ #define CLANG_ABI LLVM_ATTRIBUTE_VISIBILITY_DEFAULT
+ #define CLANG_TEMPLATE_ABI LLVM_ATTRIBUTE_VISIBILITY_DEFAULT
+ #define CLANG_EXPORT_TEMPLATE
+-#elif defined(__MACH__) || defined(__WASM__) || defined(__EMSCRIPTEN__)
++// __WASM__ is not defined by any compiler; clang spells it __wasm__. Without this,
++// wasm targets match no branch above (wasm is not ELF) and the ABI macros are left
++// undefined, so every consumer of these headers fails to parse the TableGen output.
++#elif defined(__MACH__) || defined(__WASM__) || defined(__wasm__) ||           \
++    defined(__EMSCRIPTEN__)
+ #define CLANG_ABI LLVM_ATTRIBUTE_VISIBILITY_DEFAULT
+ #define CLANG_TEMPLATE_ABI
+ #define CLANG_EXPORT_TEMPLATE
 diff --git a/llvm/include/llvm/ADT/bit.h b/llvm/include/llvm/ADT/bit.h
 index d6e33c3e6..211e28be1 100644
 --- a/llvm/include/llvm/ADT/bit.h
@@ -12,6 +29,23 @@ index d6e33c3e6..211e28be1 100644
  #include <endian.h>
  #elif defined(_AIX)
  #include <sys/machine.h>
+diff --git a/llvm/include/llvm/Support/Compiler.h b/llvm/include/llvm/Support/Compiler.h
+index 297d3e9b0..a93026510 100644
+--- a/llvm/include/llvm/Support/Compiler.h
++++ b/llvm/include/llvm/Support/Compiler.h
+@@ -201,7 +201,11 @@
+ #define LLVM_TEMPLATE_ABI LLVM_ABI
+ #define LLVM_EXPORT_TEMPLATE
+ #define LLVM_ABI_EXPORT LLVM_ABI
+-#elif defined(__MACH__) || defined(__WASM__) || defined(__EMSCRIPTEN__)
++// __WASM__ is not defined by any compiler; clang spells it __wasm__. Without this,
++// wasm targets match no branch above (wasm is not ELF) and the ABI macros are left
++// undefined, so every consumer of these headers fails to parse the TableGen output.
++#elif defined(__MACH__) || defined(__WASM__) || defined(__wasm__) ||           \
++    defined(__EMSCRIPTEN__)
+ #define LLVM_ABI __attribute__((visibility("default")))
+ #define LLVM_TEMPLATE_ABI
+ #define LLVM_EXPORT_TEMPLATE
 diff --git a/llvm/lib/Support/CrashRecoveryContext.cpp b/llvm/lib/Support/CrashRecoveryContext.cpp
 index fc30d4215..138d07618 100644
 --- a/llvm/lib/Support/CrashRecoveryContext.cpp
