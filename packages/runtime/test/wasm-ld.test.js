@@ -51,8 +51,10 @@ test(
     const builtins = `${wasiSdk}/lib/clang`;
     const [clangVersion] = await readdir(builtins);
     fs.writeFile(
-      "/lib/libclang_rt.builtins-wasm32.a",
-      await readFile(`${builtins}/${clangVersion}/lib/wasi/libclang_rt.builtins-wasm32.a`),
+      "/lib/libclang_rt.builtins.a",
+      await readFile(
+        `${builtins}/${clangVersion}/lib/wasm32-unknown-wasip1/libclang_rt.builtins.a`,
+      ),
     );
 
     const link = await runWasi(await readFile(linkerPath), {
@@ -62,7 +64,7 @@ test(
         "/work/main.o",
         "-L/lib",
         "-lc",
-        "-lclang_rt.builtins-wasm32",
+        "/lib/libclang_rt.builtins.a",
         "-o",
         "/work/program.wasm",
       ],
