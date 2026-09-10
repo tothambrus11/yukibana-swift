@@ -1,3 +1,5 @@
+import type { Diagnostic } from "./pipeline.js";
+
 /**
  * The seam between the IDE and however Swift actually gets compiled.
  *
@@ -34,10 +36,3 @@ export interface CompileResult {
   durationMs: number;
 }
 
-export interface Diagnostic {
-  file?: string;
-  line?: number;
-  column?: number;
-  severity: "error" | "warning" | "note" | "remark";
-  message: string;
-}

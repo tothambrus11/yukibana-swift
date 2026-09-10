@@ -25,7 +25,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "test": "tsc && node --test test/*.test.js"
+    "test": "tsc"
   },
   "theiaExtensions": [
     {

@@ -1,10 +1,5 @@
-import type {
-  CompileRequest,
-  CompileResult,
-  CompilerBackend,
-  Diagnostic,
-} from "@yukibana/runtime";
-import { VirtualFS, runWasi } from "@yukibana/runtime";
+import type { CompileRequest, CompileResult, CompilerBackend } from "@yukibana/runtime";
+import { VirtualFS, frontendArgs, linkArgs, parseDiagnostics, runWasi, untar } from "@yukibana/runtime";
 
 /**
  * Compiles Swift entirely inside the browser tab by driving the wasm toolchain.
@@ -17,20 +12,17 @@ import { VirtualFS, runWasi } from "@yukibana/runtime";
  *   swift-frontend.wasm  -frontend -c main.swift  ->  /build/main.o
  *   wasm-ld.wasm         /build/main.o + stdlib   ->  /build/program.wasm
  *
+ * Those argument vectors live in @yukibana/runtime's pipeline module, captured from a
+ * real `swiftc -v` run and verified by replaying them against the packed sysroot.
+ *
  * Until `swift-frontend.wasm` exists (Stage 3 of the pipeline), `ready()` rejects and
  * the IDE falls back to whichever other backend is registered.
- *
- * SPECULATIVE: the argument vectors below — the `-sdk` path, the `crt1.o` location, the
- * `-lswiftCore` link line — are written from how a native `swiftc` invokes these tools,
- * NOT verified against the Swift SDK artifact bundle's actual layout. They are a sketch
- * of the shape, and every path here must be checked against the real bundle before this
- * backend is trusted.
  */
 export class WasmBackend implements CompilerBackend {
   readonly id = "wasm";
   readonly description: string;
 
-  private toolchain?: Promise<{ frontend: WebAssembly.Module; linker: WebAssembly.Module }>;
+  private toolchain?: Promise<Toolchain>;
 
   constructor(
     private readonly swiftVersion: string,
@@ -43,81 +35,68 @@ export class WasmBackend implements CompilerBackend {
     return this.load().then(() => undefined);
   }
 
-  private load(): Promise<{ frontend: WebAssembly.Module; linker: WebAssembly.Module }> {
-    // Compile the tools once per tab: for modules this size, compilation dominates.
+  private load(): Promise<Toolchain> {
+    // Fetch and compile once per tab: for modules this size, compilation dominates, and
+    // the sysroot is tens of megabytes that must not be re-unpacked per build.
     this.toolchain ??= (async () => {
-      const [frontend, linker] = await Promise.all([
+      const [frontend, linker, sysrootArchive] = await Promise.all([
         WebAssembly.compileStreaming(fetch(`${this.toolchainUrl}/swift-frontend.wasm`)),
         WebAssembly.compileStreaming(fetch(`${this.toolchainUrl}/wasm-ld.wasm`)),
+        fetch(`${this.toolchainUrl}/swift-sysroot-core.tar`).then((r) => r.arrayBuffer()),
       ]);
-      return { frontend, linker };
+      return { frontend, linker, sysroot: new Uint8Array(sysrootArchive) };
     })();
     return this.toolchain;
   }
 
   async compile(request: CompileRequest): Promise<CompileResult> {
     const started = Date.now();
-    const { frontend, linker } = await this.load();
+    const { frontend, linker, sysroot } = await this.load();
 
     const fs = new VirtualFS();
+    untar(sysroot, fs, { prefix: "/sysroot", stripComponents: 0, readonly: true });
     for (const [path, contents] of Object.entries(request.sources)) {
       fs.writeFile(path, contents);
     }
     fs.mkdirp("/build");
 
-    const sourcePaths = Object.keys(request.sources);
-    const objects = sourcePaths.map((path) => `/build/${basename(path)}.o`);
+    const sources = Object.keys(request.sources);
+    const objects: string[] = [];
     const log: string[] = [];
 
-    for (const [index, source] of sourcePaths.entries()) {
-      const frontendRun = await runWasi(frontend, {
-        args: [
-          "swift-frontend",
-          "-frontend",
-          "-c",
-          ...sourcePaths,
-          "-primary-file",
-          source,
-          "-target",
-          "wasm32-unknown-wasip1",
-          "-sdk",
-          "/usr/share/wasi-sysroot",
-          "-o",
-          objects[index] as string,
-          ...(request.extraArgs ?? []),
-        ],
+    for (const source of sources) {
+      const object = `/build/${basename(source)}.o`;
+      const run = await runWasi(frontend, {
+        args: frontendArgs({
+          sources,
+          primary: source,
+          moduleName: "main",
+          output: object,
+          extraArgs: request.extraArgs,
+        }),
         fs,
       });
-      log.push(frontendRun.stderr);
-      if (frontendRun.exitCode !== 0) {
+      log.push(run.stderr);
+      if (run.exitCode !== 0) {
         return {
           success: false,
-          diagnostics: parseDiagnostics(frontendRun.stderr),
+          diagnostics: parseDiagnostics(log.join("")),
           log: log.join(""),
           durationMs: Date.now() - started,
         };
       }
+      objects.push(object);
     }
 
-    const linkRun = await runWasi(linker, {
-      args: [
-        "wasm-ld",
-        "-o",
-        "/build/program.wasm",
-        "/usr/lib/swift/wasi/wasm32/crt1.o",
-        ...objects,
-        "-L/usr/lib/swift/wasi/wasm32",
-        "-lswiftCore",
-        "-lc",
-        "--export-if-defined=main",
-      ],
+    const link = await runWasi(linker, {
+      args: linkArgs({ objects, output: "/build/program.wasm" }),
       fs,
     });
-    log.push(linkRun.stderr);
+    log.push(link.stderr);
 
     return {
-      success: linkRun.exitCode === 0,
-      wasm: linkRun.exitCode === 0 ? fs.readFile("/build/program.wasm") : undefined,
+      success: link.exitCode === 0,
+      wasm: link.exitCode === 0 ? fs.readFile("/build/program.wasm") : undefined,
       diagnostics: parseDiagnostics(log.join("")),
       log: log.join(""),
       durationMs: Date.now() - started,
@@ -125,22 +104,12 @@ export class WasmBackend implements CompilerBackend {
   }
 }
 
-function basename(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
+interface Toolchain {
+  frontend: WebAssembly.Module;
+  linker: WebAssembly.Module;
+  sysroot: Uint8Array;
 }
 
-/** `file:line:col: severity: message`, the format both the frontend and lld emit. */
-export function parseDiagnostics(output: string): Diagnostic[] {
-  const pattern = /^(.*?):(\d+):(\d+): (error|warning|note|remark): (.*)$/gm;
-  const diagnostics: Diagnostic[] = [];
-  for (const match of output.matchAll(pattern)) {
-    diagnostics.push({
-      file: match[1],
-      line: Number(match[2]),
-      column: Number(match[3]),
-      severity: match[4] as Diagnostic["severity"],
-      message: match[5] as string,
-    });
-  }
-  return diagnostics;
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
 }

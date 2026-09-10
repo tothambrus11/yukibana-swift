@@ -8,52 +8,80 @@
 //
 // The interface is deliberately a WASI command reading stdin: it is the same shape as
 // every other tool Yukibana runs in a worker, so it needs no JS bridge.
+//
+// Nothing here imports Foundation. swift-syntax does not need it, and pulling it in
+// would add tens of megabytes to a module the browser must download and compile.
 
-import Foundation
+#if canImport(WASILibc)
+import WASILibc
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 import SwiftDiagnostics
 import SwiftParser
 import SwiftParserDiagnostics
 import SwiftSyntax
 
-struct Position: Encodable {
-    let line: Int
-    let column: Int
-    let offset: Int
+// --- stdio --------------------------------------------------------------------
+
+// Raw descriptors rather than the stdio FILE globals: `stdin`/`stdout` are mutable
+// globals and so are not concurrency-safe under strict checking.
+private let standardInput: Int32 = 0
+private let standardOutput: Int32 = 1
+
+func readAllStandardInput() -> String {
+    var bytes: [UInt8] = []
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    while true {
+        let count = buffer.withUnsafeMutableBytes { raw in
+            read(standardInput, raw.baseAddress, raw.count)
+        }
+        if count <= 0 { break }
+        bytes.append(contentsOf: buffer[0..<count])
+    }
+    return String(decoding: bytes, as: UTF8.self)
 }
 
-struct Diagnostic: Encodable {
-    let severity: String
-    let message: String
-    let position: Position
-    let highlights: [String]
-    let notes: [String]
-    let fixIts: [String]
-}
-
-struct Declaration: Encodable {
-    let kind: String
-    let name: String
-    let position: Position
-}
-
-struct ParseResult: Encodable {
-    let ok: Bool
-    let diagnostics: [Diagnostic]
-    let declarations: [Declaration]
-    let statistics: Statistics
-
-    struct Statistics: Encodable {
-        let sourceBytes: Int
-        let tokens: Int
-        let nodes: Int
-        let parseMilliseconds: Int
+func writeStandardOutput(_ text: String) {
+    let bytes = Array(text.utf8)
+    bytes.withUnsafeBytes { raw in
+        var offset = 0
+        while offset < raw.count {
+            let written = write(standardOutput, raw.baseAddress! + offset, raw.count - offset)
+            if written <= 0 { return }
+            offset += written
+        }
     }
 }
 
-/// Walks the top level and one nesting level in, which is all an outline view shows.
+// --- model --------------------------------------------------------------------
+
+func position(of node: some SyntaxProtocol, _ converter: SourceLocationConverter) -> JSON {
+    let location = node.startLocation(converter: converter)
+    return .object([
+        ("line", .int(location.line)),
+        ("column", .int(location.column)),
+        ("offset", .int(location.offset)),
+    ])
+}
+
+func severityName(_ severity: DiagnosticSeverity) -> String {
+    switch severity {
+    case .error: return "error"
+    case .warning: return "warning"
+    case .note: return "note"
+    case .remark: return "remark"
+    @unknown default: return "error"
+    }
+}
+
+/// Walks the declarations an outline view shows.
 final class DeclarationCollector: SyntaxVisitor {
     private let converter: SourceLocationConverter
-    private(set) var declarations: [Declaration] = []
+    private(set) var declarations: [JSON] = []
 
     init(converter: SourceLocationConverter) {
         self.converter = converter
@@ -61,17 +89,12 @@ final class DeclarationCollector: SyntaxVisitor {
     }
 
     private func record(kind: String, name: String, node: some SyntaxProtocol) {
-        let location = node.startLocation(converter: converter)
         declarations.append(
-            Declaration(
-                kind: kind,
-                name: name,
-                position: Position(
-                    line: location.line,
-                    column: location.column,
-                    offset: location.offset
-                )
-            )
+            .object([
+                ("kind", .string(kind)),
+                ("name", .string(name)),
+                ("position", position(of: node, converter)),
+            ])
         )
     }
 
@@ -115,17 +138,25 @@ final class DeclarationCollector: SyntaxVisitor {
     }
 }
 
-func severityName(_ severity: DiagnosticSeverity) -> String {
-    switch severity {
-    case .error: return "error"
-    case .warning: return "warning"
-    case .note: return "note"
-    case .remark: return "remark"
-    @unknown default: return "error"
+extension SyntaxProtocol {
+    /// Counts nodes matching a predicate, and tokens among them, in one traversal.
+    func counts() -> (nodes: Int, tokens: Int) {
+        var nodes = 0
+        var tokens = 0
+        for node in Syntax(self).children(viewMode: .sourceAccurate) {
+            nodes += 1
+            if node.is(TokenSyntax.self) { tokens += 1 }
+            let child = node.counts()
+            nodes += child.nodes
+            tokens += child.tokens
+        }
+        return (nodes, tokens)
     }
 }
 
-let source = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+// --- main ---------------------------------------------------------------------
+
+let source = readAllStandardInput()
 
 // ContinuousClock rather than Dispatch: Dispatch is not part of the wasm SDK.
 let clock = ContinuousClock()
@@ -135,47 +166,52 @@ let elapsed = clock.now - started
 
 let converter = SourceLocationConverter(fileName: "input.swift", tree: tree)
 
-let diagnostics = ParseDiagnosticsGenerator.diagnostics(for: tree).map { diagnostic -> Diagnostic in
+var diagnostics: [JSON] = []
+var hasError = false
+for diagnostic in ParseDiagnosticsGenerator.diagnostics(for: tree) {
+    let severity = severityName(diagnostic.diagMessage.severity)
+    if severity == "error" { hasError = true }
     let location = diagnostic.location(converter: converter)
-    return Diagnostic(
-        severity: severityName(diagnostic.diagMessage.severity),
-        message: diagnostic.message,
-        position: Position(line: location.line, column: location.column, offset: location.offset),
-        highlights: diagnostic.highlights.map { $0.trimmedDescription },
-        notes: diagnostic.notes.map(\.message),
-        fixIts: diagnostic.fixIts.map(\.message.message)
+    diagnostics.append(
+        .object([
+            ("severity", .string(severity)),
+            ("message", .string(diagnostic.message)),
+            (
+                "position",
+                .object([
+                    ("line", .int(location.line)),
+                    ("column", .int(location.column)),
+                    ("offset", .int(location.offset)),
+                ])
+            ),
+            ("highlights", .array(diagnostic.highlights.map { .string($0.trimmedDescription) })),
+            ("notes", .array(diagnostic.notes.map { .string($0.message) })),
+            ("fixIts", .array(diagnostic.fixIts.map { .string($0.message.message) })),
+        ])
     )
 }
 
 let collector = DeclarationCollector(converter: converter)
 collector.walk(tree)
 
-let result = ParseResult(
-    ok: !diagnostics.contains { $0.severity == "error" },
-    diagnostics: diagnostics,
-    declarations: collector.declarations,
-    statistics: ParseResult.Statistics(
-        sourceBytes: source.utf8.count,
-        tokens: tree.totalNodes(where: { $0.is(TokenSyntax.self) }),
-        nodes: tree.totalNodes(where: { _ in true }),
-        parseMilliseconds: Int(elapsed.components.seconds * 1000)
-            + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
-    )
-)
+let totals = tree.counts()
+let milliseconds =
+    Int(elapsed.components.seconds) * 1000
+    + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
 
-let encoder = JSONEncoder()
-encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-FileHandle.standardOutput.write(try encoder.encode(result))
-FileHandle.standardOutput.write(Data("\n".utf8))
+let result = JSON.object([
+    ("ok", .bool(!hasError)),
+    ("diagnostics", .array(diagnostics)),
+    ("declarations", .array(collector.declarations)),
+    (
+        "statistics",
+        .object([
+            ("sourceBytes", .int(source.utf8.count)),
+            ("tokens", .int(totals.tokens)),
+            ("nodes", .int(totals.nodes)),
+            ("parseMilliseconds", .int(milliseconds)),
+        ])
+    ),
+])
 
-extension SyntaxProtocol {
-    /// Counts nodes matching a predicate without materialising the whole sequence twice.
-    func totalNodes(where predicate: (Syntax) -> Bool) -> Int {
-        var count = 0
-        for node in Syntax(self).children(viewMode: .sourceAccurate) {
-            if predicate(node) { count += 1 }
-            count += node.totalNodes(where: predicate)
-        }
-        return count
-    }
-}
+writeStandardOutput(result.serialized + "\n")

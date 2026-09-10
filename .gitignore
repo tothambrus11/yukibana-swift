@@ -11,3 +11,4 @@ packages/playground/public/hello.wasm
 packages/playground/public/hello.swift
 packages/playground/public/swift-parse.wasm
 lib/
+toolchain/build/
