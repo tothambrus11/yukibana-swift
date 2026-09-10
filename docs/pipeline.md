@@ -119,6 +119,14 @@ What configuring it actually taught, as opposed to what reading the code suggest
   build found", even though the native TableGen binaries exist elsewhere.
 * **cmark-gfm must be built, not just present as source** — hence Stage 15. It
   cross-compiles to wasm with no patches at all.
+* **Use wasi-sdk's sysroot for Swift's C++, not the Swift SDK's `WASI.sdk`.** The two ship
+  different libc++ configurations: wasi-sdk's `wasm32-wasip1` libc++ sets
+  `_LIBCPP_HAS_THREADS=1`, the Swift SDK's sets it to `0`. LLVM and clang are cross-built
+  against wasi-sdk's, and `llvm/Support/Mutex.h` uses `std::recursive_mutex`
+  unconditionally, so pointing Swift at the Swift SDK's sysroot fails with "no type named
+  'recursive_mutex' in namespace 'std'" — and linking two different libc++ ABIs into one
+  binary would be worse than the compile error. One libc++ for all C++ in the toolchain;
+  the Swift SDK supplies the Swift side only.
 * **One Swift patch is required so far**: `SwiftCompilerSources` unconditionally depends
   on an in-tree `swift-stdlib-wasi-wasm32` target when cross-compiling, which does not
   exist when the host stdlib comes prebuilt from the SDK. The patch makes that dependency

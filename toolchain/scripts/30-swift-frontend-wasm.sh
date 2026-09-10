@@ -35,9 +35,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
 : "${SWIFT_CMARK_SRC:=${YUKIBANA_SRC}/swift-cmark}"
 : "${NATIVE_SWIFT_BIN:=${HOME}/.local/share/swiftly/toolchains/${SWIFT_VERSION}/usr/bin}"
 : "${CMARK_INSTALL:=${YUKIBANA_BUILD}/wasm-cmark-install}"
-# The prebuilt WASI sysroot from the Swift SDK: the compiler's own Swift modules are
-# built against it, since the host stdlib is not built in this tree.
-: "${SWIFT_WASM_SDK_SYSROOT:=${HOME}/.swiftpm/swift-sdks/${SWIFT_TAG}_wasm.artifactbundle/${SWIFT_TAG}_wasm/wasm32-unknown-wasip1/WASI.sdk}"
+# Deliberately wasi-sdk's sysroot, NOT the Swift SDK's WASI.sdk, even though the latter
+# is where the prebuilt stdlib lives. The two ship different libc++ configurations:
+# wasi-sdk's wasm32-wasip1 libc++ sets _LIBCPP_HAS_THREADS=1, the Swift SDK's sets it to
+# 0. LLVM and clang are cross-built against wasi-sdk's, and LLVM's Support/Mutex.h uses
+# std::recursive_mutex unconditionally, so pointing Swift at the Swift SDK's sysroot
+# fails with "no type named 'recursive_mutex' in namespace 'std'" — and linking two
+# different libc++ ABIs into one binary would be worse than the error. One libc++ for
+# all C++ in the toolchain; the Swift SDK supplies the Swift side only.
+: "${SWIFT_WASM_SDK_SYSROOT:=${WASI_SDK_PATH}/share/wasi-sysroot}"
 
 LLVM_BUILD="${YUKIBANA_BUILD}/wasm-llvm"   # produced by 20-llvm-wasm.sh
 SWIFT_BUILD="${YUKIBANA_BUILD}/wasm-swift"
