@@ -45,12 +45,9 @@ test(
       prefix: "/sysroot",
       readonly: true,
     });
-    // Deliberately conformance-free: mangling protocol conformances still traps on a
-    // 32-bit host, so print() and array literals are out (see the toolchain repo's
-    // docs/status.md). What this test proves is the pipeline, not the language subset.
     fs.writeFile(
       "/src/main.swift",
-      "let a = 6\nlet b = 7\nlet product = a * b\n",
+      'let squares = (1...5).map { $0 * $0 }\nprint("squares: \\(squares)")\n',
     );
     fs.mkdirp("/build");
     fs.mkdirp("/build/modulecache");
@@ -96,5 +93,6 @@ test(
       fs: new VirtualFS(),
     });
     assert.equal(program.exitCode, 0, `program failed: ${program.stderr}`);
+    assert.equal(program.stdout, "squares: [1, 4, 9, 16, 25]\n");
   },
 );

@@ -91,12 +91,12 @@ test("swift-syntax parses edited source in-tab", { timeout: 180_000 }, async (t)
 });
 
 /**
- * The compile path degrades honestly. Until the toolchain artifacts are built and served
- * at /toolchain, "Compile & Run" must say so plainly — and the prebuilt module must keep
- * working, so the page is never dead.
+ * The whole point, in a browser: the editor's text is compiled by swift-frontend.wasm,
+ * linked by wasm-ld.wasm, and run — and the program's own output comes back. Nothing
+ * leaves the tab.
  */
-test("Compile & Run reports a missing toolchain instead of failing obscurely", {
-  timeout: 180_000,
+test("Compile & Run compiles Swift in the tab and shows the program's output", {
+  timeout: 900_000,
 }, async (t) => {
   const server = await preview({
     root: new URL("..", import.meta.url).pathname,
@@ -114,15 +114,19 @@ test("Compile & Run reports a missing toolchain instead of failing obscurely", {
     { timeout: 120_000 },
   );
 
+  await page.fill("#editor", 'let squares = (1...5).map { $0 * $0 }\nprint("squares: \\(squares)")\n');
   await page.click("#compile");
+
+  // Fetching and compiling ~300 MiB of toolchain is the slow part; the compile itself
+  // takes seconds.
+  // "compiled in" appears before the program runs; wait for the program's own output.
   await page.waitForFunction(
-    () => document.getElementById("output")?.textContent?.includes("toolchain"),
-    { timeout: 60_000 },
+    () => (document.getElementById("output")?.textContent ?? "").includes("squares:"),
+    { timeout: 600_000 },
   );
 
   const output = await page.textContent("#output");
-  assert.match(output, /toolchain is not built yet/);
-  assert.match(output, /20-llvm-wasm\.sh/, "it names the script that produces it");
-  // The page stays usable.
-  assert.equal(await page.isEnabled("#run"), true);
+  assert.match(output, /squares: \[1, 4, 9, 16, 25\]/);
+  const status = await page.textContent("#run-status");
+  assert.match(status, /compiled in \d+ ms, exit 0/);
 });

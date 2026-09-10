@@ -15,18 +15,24 @@ See [docs/pipeline.md](docs/pipeline.md) for how to build it,
 | 0 | Swift source → `wasm32-wasip1`, executed in a browser tab | **works**, browser-tested |
 | 1 | swift-syntax → wasm: parsing, diagnostics, outline in-tab | **works**, browser-tested |
 | 2 | LLVM + clang + lld cross-built for a wasm host | **works** — `wasm-ld.wasm` links and the program runs |
-| 3 | `swift-frontend` cross-built for a wasm host | **compiles Swift in the browser**, for a language subset |
-| 4 | Theia IDE shell | extension written and typechecked; app not yet launched |
+| 3 | `swift-frontend` cross-built for a wasm host | **compiles Swift in the browser** |
+| 4 | Theia IDE shell | **works** — compiles and runs Swift from the IDE |
 
-A browser tab now compiles Swift with `swift-frontend.wasm` and links it with
-`wasm-ld.wasm` in about 1.4 seconds, and runs the result in 20 ms — no server involved.
+A browser tab compiles Swift with `swift-frontend.wasm`, links it with `wasm-ld.wasm`,
+and runs the result — no server involved:
 
-**The language subset is real and worth stating.** Integers, functions, structs and string
-literals compile. `print()` and array literals do not: mangling protocol conformances
-traps on a 32-bit host, almost certainly the same pointer-packing class as two bugs
-already fixed. The toolchain repo's
-[docs/status.md](https://github.com/tothambrus11/swift-toolchain-wasm/blob/main/docs/status.md)
-records exactly where the line is and what has been ruled out.
+```swift
+struct Point: CustomStringConvertible {
+  var x: Int, y: Int
+  var description: String { "(\(x), \(y))" }
+}
+let points = (1...3).map { Point(x: $0, y: $0 * $0) }
+print("points: \(points)")        // points: [(1, 1), (2, 4), (3, 9)]
+```
+
+That compiles in about two seconds in the tab and runs in 34 ms. Structs, protocol
+conformances, generics, string interpolation, dictionaries and `print()` all work; the
+tests assert the program's actual output rather than just an exit code.
 
 Getting Swift's compiler to build for a wasm host surfaced three upstream bugs, written
 up in [docs/pipeline.md](docs/pipeline.md): `LLVM_ABI`/`CLANG_ABI` vanish on wasm because
