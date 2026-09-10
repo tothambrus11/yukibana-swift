@@ -1,0 +1,20 @@
+diff --git a/SwiftCompilerSources/CMakeLists.txt b/SwiftCompilerSources/CMakeLists.txt
+index f5596388..d0ec7701 100644
+--- a/SwiftCompilerSources/CMakeLists.txt
++++ b/SwiftCompilerSources/CMakeLists.txt
+@@ -295,7 +295,14 @@ function(add_swift_compiler_modules_library name)
+       COMMENT "Building swift module ${module}")
+ 
+     if(BOOTSTRAPPING_MODE STREQUAL "CROSSCOMPILE")
+-      add_dependencies(${dep_target} swift-stdlib-${SWIFT_SDK_${SWIFT_HOST_VARIANT_SDK}_LIB_SUBDIR}-${SWIFT_HOST_VARIANT_ARCH})
++      # When cross-compiling, the host stdlib may come prebuilt from an SDK rather than
++      # being built in this tree (SWIFT_BUILD_STDLIB=OFF), in which case there is no
++      # target to depend on.
++      set(_host_stdlib_target
++        swift-stdlib-${SWIFT_SDK_${SWIFT_HOST_VARIANT_SDK}_LIB_SUBDIR}-${SWIFT_HOST_VARIANT_ARCH})
++      if(TARGET ${_host_stdlib_target})
++        add_dependencies(${dep_target} ${_host_stdlib_target})
++      endif()
+     endif()
+     set("${module}_dep_target" ${dep_target})
+     set(all_module_targets ${all_module_targets} ${dep_target})

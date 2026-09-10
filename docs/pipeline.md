@@ -92,33 +92,62 @@ patches stay small enough to upstream. Regenerate them after editing the checkou
 
 ## Stage 3 — `swift-frontend` on a wasm host
 
-`toolchain/scripts/30-swift-frontend-wasm.sh` exists but **has not been run to
-completion**. Every flag in it is researched from swiftlang/swift @ swift-6.3.3-RELEASE
-rather than verified by a successful build. What the reading established:
+**The CMake configure works.** `toolchain/scripts/30-swift-frontend-wasm.sh` configures
+and generates a build of `swift-frontend` for `wasm32-wasip1`. The build itself has not
+been run to completion — it needs Stage 20's clang and LLVM libraries — so expect a
+patch series of its own beyond the one patch already required.
 
-* **Swift's CMake already knows WASI as a host.** `CMakeLists.txt` maps
-  `CMAKE_SYSTEM_NAME=WASI` to `SWIFT_HOST_VARIANT_SDK=WASI`. Nothing needs to be taught
-  that wasm-as-a-host is a concept — a better starting position than the prior-art
-  survey suggested.
-* **There is a supported cross-compile path for the Swift-implemented parts of the
-  compiler.** Setting `SWIFT_NATIVE_SWIFT_TOOLS_PATH` plus
-  `BOOTSTRAPPING_MODE=CROSSCOMPILE` makes a previously built native `swiftc` build the
-  compiler's Swift modules for the target host. A native Swift 6.3.3 that can target
-  `wasm32-unknown-wasip1` is exactly what Stage 0 already installs.
-* **clang has to be cross-built too.** `swift-frontend` embeds ClangImporter, so Stage 3
-  configures its own `LLVM_ENABLE_PROJECTS="clang;lld"` build rather than reusing
-  Stage 2's lld-only one. This is the bulk of the wall-clock cost.
+```sh
+cd toolchain
+./scripts/15-cmark-wasm.sh              # cmark-gfm for the wasm host
+./scripts/20-llvm-wasm.sh               # LLVM + clang + lld (hours)
+./scripts/30-swift-frontend-wasm.sh     # -> toolchain/out/swift-frontend.wasm
+```
+
+What configuring it actually taught, as opposed to what reading the code suggested:
+
+* **Swift's CMake already knows WASI as a host.** `CMAKE_SYSTEM_NAME=WASI` maps to
+  `SWIFT_HOST_VARIANT_SDK=WASI`. Nothing needs to be taught that wasm-as-a-host exists.
+* **Pass `BOOTSTRAPPING_MODE=BOOTSTRAPPING`, not `CROSSCOMPILE`.** Swift translates the
+  former into the latter when `SWIFT_NATIVE_SWIFT_TOOLS_PATH` is set. Passing
+  `CROSSCOMPILE` directly skips the branch that sets `SWIFT_EXEC_FOR_SWIFT_MODULES`, and
+  the configure dies with "Need a swift toolchain building swift compiler sources". A
+  native `swiftc` then builds the compiler's own Swift-implemented modules for the wasm
+  host — and Stage 0 already installs a native Swift that targets wasm.
+* **`LLVM_TABLEGEN` and `CLANG_TABLEGEN` must be passed explicitly.** Otherwise Swift
+  insists on an `${LLVM_BINARY_DIR}/NATIVE` directory and aborts with "no native LLVM
+  build found", even though the native TableGen binaries exist elsewhere.
+* **cmark-gfm must be built, not just present as source** — hence Stage 15. It
+  cross-compiles to wasm with no patches at all.
+* **One Swift patch is required so far**: `SwiftCompilerSources` unconditionally depends
+  on an in-tree `swift-stdlib-wasi-wasm32` target when cross-compiling, which does not
+  exist when the host stdlib comes prebuilt from the SDK. The patch makes that dependency
+  conditional on the target existing.
 
 ### The part that is not a build problem
 
 **Macros and compiler plugins cannot work in-browser as designed.** Swift implements them
 by spawning a plugin executable and talking to it over a pipe. WASI has no way to spawn
 anything — that is precisely what `WASI/Program.inc` reports rather than pretending
-otherwise. So the first working configuration must set `SWIFT_BUILD_SWIFT_SYNTAX=OFF`,
-and macro support needs plugins redesigned as in-process wasm modules loaded by the
-embedder. That is a design project, not a porting one, and it should be planned for
-rather than discovered late.
+otherwise. So the first working configuration sets `SWIFT_BUILD_SWIFT_SYNTAX=OFF`, and
+macro support needs plugins redesigned as in-process wasm modules loaded by the embedder.
+That is a design project, not a porting one, and it should be planned for rather than
+discovered late.
 
 The other ceiling worth planning around is wasm32's 4 GiB address space: single-file
 compiles should fit, larger whole-module builds may not, which is why the IDE keeps a
 `RemoteBackend` behind the same interface.
+
+## The compile pipeline, captured
+
+`packages/runtime/src/pipeline.ts` holds the argument vectors the browser replays. They
+were captured from a real `swiftc -target wasm32-unknown-wasip1 -v` run and verified by
+replaying them by hand — frontend, then `wasm-ld`, no driver in between — against the
+sysroot `40-sysroot-pack.sh` produces. Two things the driver does that Yukibana drops:
+
+* `swift-autolink-extract`, which reads the object file's autolink section to decide
+  which libraries to link. Its answer for a wasm target is a fixed list, which is inlined.
+* `-plugin-path` / `-in-process-plugin-server-path`, the macro plumbing above.
+
+One correction the capture forced: sources are listed **once**, with `-primary-file`
+marking the one being compiled. Listing the primary twice is a duplicate-input error.

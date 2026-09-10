@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
-# Development helper: snapshot the working tree of the LLVM checkout back into the
-# patch series, so fixes made while debugging a build become reproducible inputs.
+# Development helper: snapshot the working trees back into the patch series, so fixes
+# made while debugging a build become reproducible inputs.
 source "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
 
-OUT="${YUKIBANA_ROOT}/toolchain/patches/llvm/0001-wasi-host-support.patch"
-cd "$LLVM_SRC"
-git diff > "$OUT"
-log "wrote ${OUT} ($(grep -c '^--- a/' "$OUT") files, $(wc -l < "$OUT") lines)"
+snapshot() {
+  local name="$1" repo="$2" file="$3"
+  [[ -d "${repo}/.git" ]] || { warn "skipping ${name}: not a checkout"; return 0; }
+  local out="${YUKIBANA_ROOT}/toolchain/patches/${name}/${file}"
+  mkdir -p "$(dirname "$out")"
+  git -C "$repo" diff > "$out"
+  if [[ -s "$out" ]]; then
+    log "wrote ${out} ($(grep -c '^--- a/' "$out") files, $(wc -l < "$out") lines)"
+  else
+    rm -f "$out"
+    log "${name}: no local changes"
+  fi
+}
+
+snapshot llvm "$LLVM_SRC" 0001-wasi-host-support.patch
+snapshot swift "${YUKIBANA_SRC}/swift" 0001-wasi-host-support.patch

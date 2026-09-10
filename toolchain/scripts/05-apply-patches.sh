@@ -1,28 +1,39 @@
 #!/usr/bin/env bash
-# Stage 05 — apply Yukibana's patch series to the LLVM checkout.
+# Stage 05 — apply Yukibana's patch series to the checked-out sources.
 #
-# Every patch here exists because a POSIX facility LLVM assumes is simply absent on
-# wasm32-wasip1 (processes, signals, sockets, resource limits, setjmp). They are
-# deliberately small and guarded on __wasi__ so they stay upstreamable and so a native
-# build of the same tree is bit-for-bit unaffected.
+# Two repositories need patches, for two different reasons:
 #
+#   llvm/  — POSIX facilities LLVM assumes that wasm32-wasip1 simply lacks: processes,
+#            signals, sockets, resource limits, setjmp. All guarded on __wasi__ so a
+#            native build of the same tree is unaffected.
+#   swift/ — build-system assumptions that break when the host stdlib comes prebuilt
+#            from an SDK rather than being built in-tree.
+#
+# They are deliberately small, so they stay upstreamable.
 # Idempotent: patches already applied are skipped.
 source "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
 
-PATCH_DIR="${YUKIBANA_ROOT}/toolchain/patches/llvm"
-shopt -s nullglob
-patches=("${PATCH_DIR}"/*.patch)
-[[ ${#patches[@]} -gt 0 ]] || { log "no patches to apply"; exit 0; }
+apply_series() {
+  local name="$1" repo="$2"
+  local dir="${YUKIBANA_ROOT}/toolchain/patches/${name}"
+  shopt -s nullglob
+  local patches=("${dir}"/*.patch)
+  [[ ${#patches[@]} -gt 0 ]] || { log "no ${name} patches"; return 0; }
+  [[ -d "${repo}/.git" ]] || { warn "skipping ${name}: ${repo} is not a checkout"; return 0; }
 
-cd "$LLVM_SRC"
-for patch in "${patches[@]}"; do
-  name="$(basename "$patch")"
-  if git apply --reverse --check "$patch" >/dev/null 2>&1; then
-    log "already applied: ${name}"
-  elif git apply --check "$patch" >/dev/null 2>&1; then
-    git apply "$patch"
-    log "applied: ${name}"
-  else
-    die "cannot apply ${name} to $(git -C "$LLVM_SRC" describe --tags --always)"
-  fi
-done
+  local patch base
+  for patch in "${patches[@]}"; do
+    base="$(basename "$patch")"
+    if git -C "$repo" apply --reverse --check "$patch" >/dev/null 2>&1; then
+      log "already applied: ${name}/${base}"
+    elif git -C "$repo" apply --check "$patch" >/dev/null 2>&1; then
+      git -C "$repo" apply "$patch"
+      log "applied: ${name}/${base}"
+    else
+      die "cannot apply ${name}/${base} to ${repo}"
+    fi
+  done
+}
+
+apply_series llvm "$LLVM_SRC"
+apply_series swift "${YUKIBANA_SRC}/swift"
