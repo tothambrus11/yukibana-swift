@@ -1,0 +1,41 @@
+{
+  "name": "@yukibana/ide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Theia browser application hosting the Yukibana Swift IDE",
+  "license": "MIT",
+  "dependencies": {
+    "@theia/core": "1.75.0",
+    "@theia/editor": "1.75.0",
+    "@theia/filesystem": "1.75.0",
+    "@theia/markers": "1.75.0",
+    "@theia/messages": "1.75.0",
+    "@theia/monaco": "1.75.0",
+    "@theia/navigator": "1.75.0",
+    "@theia/outline-view": "1.75.0",
+    "@theia/output": "1.75.0",
+    "@theia/preferences": "1.75.0",
+    "@theia/workspace": "1.75.0",
+    "@yukibana/theia-extension": "file:../theia-yukibana"
+  },
+  "devDependencies": {
+    "@theia/cli": "1.75.0"
+  },
+  "scripts": {
+    "clean": "theia clean",
+    "build": "theia build --mode development",
+    "start": "theia start --hostname 0.0.0.0 --port 3000"
+  },
+  "theia": {
+    "target": "browser",
+    "frontend": {
+      "config": {
+        "applicationName": "Yukibana",
+        "preferences": {
+          "files.enableTrash": false,
+          "editor.fontSize": 13
+        }
+      }
+    }
+  }
+}

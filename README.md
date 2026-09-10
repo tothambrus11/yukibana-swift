@@ -13,6 +13,10 @@ for the target design and [docs/prior-art.md](docs/prior-art.md) for what alread
 | --- | --- |
 | `docs/` | research and architecture notes |
 | `packages/runtime/` | virtual filesystem, WASI runner, compiler-backend interface |
+| `packages/playground/` | smallest end-to-end demo page |
+| `packages/theia-yukibana/` | Theia extension: build-and-run command, in-browser compiler backend |
+| `packages/ide/` | the Theia browser application |
+| `tools/swift-parse/` | swift-syntax parser, cross-compiled to wasm |
 | `toolchain/` | the build pipeline that produces the `.wasm` toolchain artifacts |
 | `examples/` | Swift fixtures used by the pipeline tests |
 

@@ -1,0 +1,35 @@
+{
+  "name": "@yukibana/theia-extension",
+  "version": "0.1.0",
+  "description": "Theia extension wiring the Yukibana Swift compiler backends into the IDE",
+  "license": "MIT",
+  "keywords": [
+    "theia-extension"
+  ],
+  "main": "lib/browser/index.js",
+  "types": "lib/browser/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "dependencies": {
+    "@theia/core": "1.75.0",
+    "@theia/editor": "1.75.0",
+    "@theia/output": "1.75.0",
+    "@theia/workspace": "1.75.0",
+    "@yukibana/runtime": "file:../runtime"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "tsc && node --test test/*.test.js"
+  },
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/yukibana-frontend-module"
+    }
+  ]
+}
