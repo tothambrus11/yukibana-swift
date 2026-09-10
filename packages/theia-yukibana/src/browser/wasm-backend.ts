@@ -19,6 +19,12 @@ import { VirtualFS, runWasi } from "@yukibana/runtime";
  *
  * Until `swift-frontend.wasm` exists (Stage 3 of the pipeline), `ready()` rejects and
  * the IDE falls back to whichever other backend is registered.
+ *
+ * SPECULATIVE: the argument vectors below — the `-sdk` path, the `crt1.o` location, the
+ * `-lswiftCore` link line — are written from how a native `swiftc` invokes these tools,
+ * NOT verified against the Swift SDK artifact bundle's actual layout. They are a sketch
+ * of the shape, and every path here must be checked against the real bundle before this
+ * backend is trusted.
  */
 export class WasmBackend implements CompilerBackend {
   readonly id = "wasm";

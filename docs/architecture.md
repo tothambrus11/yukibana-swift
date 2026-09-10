@@ -80,8 +80,22 @@ examples/        Swift sample programs used as fixtures by the pipeline tests
 | 0 | Swift → `wasm32-wasip1`, executed in a browser tab via WASI shim | low — stock toolchain |
 | 1 | `swift-syntax` compiled to wasm; parse/diagnose/format in-tab | low |
 | 2 | `wasm-ld.wasm` — LLVM/lld cross-built for a wasm host | **high** — validates the whole approach |
-| 3 | `swift-frontend.wasm` | **highest** — size, memory, exceptions |
+| 3 | `swift-frontend.wasm` | **highest** — see below |
 | 4 | Theia IDE shell wired to the backends | medium |
+
+Stage 3 is larger than "Stage 2 plus the Swift frontend", and the scope should be
+stated plainly rather than hidden behind the word "risk":
+
+* `swift-frontend` embeds **ClangImporter**, so clang has to be cross-built for the wasm
+  host too. Stage 2 builds only lld and the WebAssembly target; Stage 3 multiplies the
+  build.
+* Modern `swift-frontend` contains **Swift-implemented components**, so building it for a
+  wasm host needs a Swift compiler that targets a wasi *host*. The Swift SDK for
+  WebAssembly plausibly supplies this, but nothing in the prior art confirms anyone has
+  done it.
+* wasm32 caps a module at **4 GiB of address space**. Single-file compiles should fit;
+  whole-module builds of large packages may not, which is the other reason the
+  `RemoteBackend` fallback exists.
 
 Stages 2 and 3 are long builds (hours of CPU). The pipeline is therefore written as
 reproducible scripts + a Dockerfile that run identically on a laptop, in this container,
