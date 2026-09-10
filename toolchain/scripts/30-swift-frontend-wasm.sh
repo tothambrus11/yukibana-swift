@@ -1,34 +1,33 @@
 #!/usr/bin/env bash
 # Stage 30 — cross-build `swift-frontend` for a wasm host.
 #
-# The CMake configure below is VERIFIED: it completes, and generates a build. The build
-# itself has not yet been run to completion, because it needs Stage 20's clang and LLVM
-# libraries; expect a patch series of its own beyond the one patch already required.
+# Configure and compile are verified: Swift's own C++ sources build for
+# wasm32-wasip1. The final link depends on Stage 20's LLVM and clang libraries.
 #
-# What the configure established, by doing it rather than by reading:
+# What had to be true, learned by doing rather than by reading:
 #
-#   * Swift's CMake already recognises WASI as a host — CMakeLists.txt maps
-#     CMAKE_SYSTEM_NAME=WASI to SWIFT_HOST_VARIANT_SDK=WASI. Nothing has to be taught
-#     that wasm-as-a-host is a concept.
-#   * Pass BOOTSTRAPPING_MODE=BOOTSTRAPPING, not CROSSCOMPILE. Swift's CMake translates
-#     the former to the latter when SWIFT_NATIVE_SWIFT_TOOLS_PATH is set; passing
-#     CROSSCOMPILE directly skips the branch that sets SWIFT_EXEC_FOR_SWIFT_MODULES and
-#     the configure fails with "Need a swift toolchain building swift compiler sources".
-#     A native swiftc then builds the compiler's own Swift-implemented modules for the
-#     wasm host — and Stage 0 already installs a native Swift that targets wasm.
-#   * LLVM_TABLEGEN/CLANG_TABLEGEN must be passed explicitly. Without them, Swift insists
-#     on an ${LLVM_BINARY_DIR}/NATIVE directory and aborts with "no native LLVM build
-#     found", even though the native TableGen binaries exist elsewhere.
-#   * cmark-gfm must be *built*, not just present in source form (Stage 15).
-#   * One patch is required: SwiftCompilerSources unconditionally depends on an in-tree
-#     swift-stdlib-wasi-wasm32 target when cross-compiling, which does not exist when the
-#     host stdlib comes prebuilt from the SDK. See toolchain/patches/swift/.
+#   * Swift's CMake already recognises WASI as a host — CMAKE_SYSTEM_NAME=WASI maps to
+#     SWIFT_HOST_VARIANT_SDK=WASI. Nothing has to be taught that wasm-as-a-host exists.
+#   * LLVM_TABLEGEN/CLANG_TABLEGEN must be passed explicitly, or Swift insists on an
+#     ${LLVM_BINARY_DIR}/NATIVE directory and aborts with "no native LLVM build found".
+#   * cmark-gfm must be *built*, not just checked out (Stage 15).
+#   * SWIFT_WASI_SYSROOT_PATH must be wasi-sdk's sysroot, NOT the Swift SDK's WASI.sdk.
+#     Their libc++ builds differ (_LIBCPP_HAS_THREADS 1 vs 0); LLVM is compiled against
+#     wasi-sdk's, and llvm/Support/Mutex.h needs std::recursive_mutex.
+#   * The wasi-libc emulation defines are required, not optional: swift's C++ includes
+#     <signal.h>, which hard-errors without -D_WASI_EMULATED_SIGNAL.
 #
-# The known-hard part is NOT the build system. Macros and compiler plugins are
-# implemented by spawning plugin executables, and WASI can spawn nothing (see
-# WASI/Program.inc, which reports this rather than pretending). So SWIFT_BUILD_SWIFT_SYNTAX
-# must be OFF, and macro support needs plugins redesigned as in-process wasm modules the
-# embedder loads.
+# SWIFT_ENABLE_SWIFT_IN_SWIFT is OFF for this first working configuration. The compiler's
+# Swift-implemented modules need C++ interop, and C++ interop is broken for
+# wasm32-unknown-wasip1 in the stock Swift 6.3.3 SDK: importing any C++ module hits a
+# Clang module cycle, "cyclic dependency in module 'SwiftWASILibc': SwiftWASILibc ->
+# std_inttypes_h -> SwiftWASILibc". That reproduces with a two-line Swift file and the
+# stock SDK, so it is an upstream SwiftWasm bug, not a misconfiguration here. Turning it
+# off costs the Swift-implemented SIL optimizer passes — acceptable for a frontend that
+# compiles at -Onone — and it is the switch to flip once interop is fixed.
+#
+# Macros and compiler plugins remain impossible regardless: they are spawned executables,
+# and WASI can spawn nothing (see WASI/Program.inc). Hence SWIFT_BUILD_SWIFT_SYNTAX=OFF.
 source "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
 
 : "${SWIFT_SRC:=${YUKIBANA_SRC}/swift}"
@@ -93,11 +92,9 @@ cmake -G Ninja -S "${SWIFT_SRC}" -B "$SWIFT_BUILD" \
   -DSWIFT_INCLUDE_TESTS=OFF \
   -DSWIFT_INCLUDE_DOCS=OFF \
   -DSWIFT_BUILD_SWIFT_SYNTAX=OFF \
-  -DSWIFT_ENABLE_SWIFT_IN_SWIFT=ON \
-  -DBOOTSTRAPPING_MODE=BOOTSTRAPPING \
-  -DSWIFT_NATIVE_SWIFT_TOOLS_PATH="${NATIVE_SWIFT_BIN}" \
+  -DSWIFT_ENABLE_SWIFT_IN_SWIFT=OFF \
+  -DBOOTSTRAPPING_MODE=OFF \
   -DSWIFT_NATIVE_CLANG_TOOLS_PATH="${NATIVE_SWIFT_BIN}" \
-  -DCMAKE_Swift_COMPILER="${NATIVE_SWIFT_BIN}/swiftc" \
   -DCMAKE_CXX_FLAGS="${WASI_EMULATION_DEFINES} -fno-exceptions" \
   -DCMAKE_EXE_LINKER_FLAGS="${WASI_EMULATION_LIBS} -Wl,-z,stack-size=${STACK_SIZE}"
 

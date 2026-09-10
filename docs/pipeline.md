@@ -92,45 +92,56 @@ patches stay small enough to upstream. Regenerate them after editing the checkou
 
 ## Stage 3 — `swift-frontend` on a wasm host
 
-**The CMake configure works.** `toolchain/scripts/30-swift-frontend-wasm.sh` configures
-and generates a build of `swift-frontend` for `wasm32-wasip1`. The build itself has not
-been run to completion — it needs Stage 20's clang and LLVM libraries — so expect a
-patch series of its own beyond the one patch already required.
+**Configure and compile work.** Swift's own C++ sources build for `wasm32-wasip1`; the
+final link waits on Stage 20's LLVM and clang libraries.
 
 ```sh
 cd toolchain
-./scripts/15-cmark-wasm.sh              # cmark-gfm for the wasm host
+./scripts/00-fetch-sources.sh
+./scripts/05-apply-patches.sh
+./scripts/10-host-tools.sh
+./scripts/15-cmark-wasm.sh
 ./scripts/20-llvm-wasm.sh               # LLVM + clang + lld (hours)
 ./scripts/30-swift-frontend-wasm.sh     # -> toolchain/out/swift-frontend.wasm
 ```
 
-What configuring it actually taught, as opposed to what reading the code suggested:
+What building it taught, as opposed to what reading the code suggested:
 
 * **Swift's CMake already knows WASI as a host.** `CMAKE_SYSTEM_NAME=WASI` maps to
-  `SWIFT_HOST_VARIANT_SDK=WASI`. Nothing needs to be taught that wasm-as-a-host exists.
-* **Pass `BOOTSTRAPPING_MODE=BOOTSTRAPPING`, not `CROSSCOMPILE`.** Swift translates the
-  former into the latter when `SWIFT_NATIVE_SWIFT_TOOLS_PATH` is set. Passing
-  `CROSSCOMPILE` directly skips the branch that sets `SWIFT_EXEC_FOR_SWIFT_MODULES`, and
-  the configure dies with "Need a swift toolchain building swift compiler sources". A
-  native `swiftc` then builds the compiler's own Swift-implemented modules for the wasm
-  host — and Stage 0 already installs a native Swift that targets wasm.
-* **`LLVM_TABLEGEN` and `CLANG_TABLEGEN` must be passed explicitly.** Otherwise Swift
-  insists on an `${LLVM_BINARY_DIR}/NATIVE` directory and aborts with "no native LLVM
-  build found", even though the native TableGen binaries exist elsewhere.
-* **cmark-gfm must be built, not just present as source** — hence Stage 15. It
-  cross-compiles to wasm with no patches at all.
-* **Use wasi-sdk's sysroot for Swift's C++, not the Swift SDK's `WASI.sdk`.** The two ship
-  different libc++ configurations: wasi-sdk's `wasm32-wasip1` libc++ sets
-  `_LIBCPP_HAS_THREADS=1`, the Swift SDK's sets it to `0`. LLVM and clang are cross-built
-  against wasi-sdk's, and `llvm/Support/Mutex.h` uses `std::recursive_mutex`
-  unconditionally, so pointing Swift at the Swift SDK's sysroot fails with "no type named
-  'recursive_mutex' in namespace 'std'" — and linking two different libc++ ABIs into one
-  binary would be worse than the compile error. One libc++ for all C++ in the toolchain;
-  the Swift SDK supplies the Swift side only.
-* **One Swift patch is required so far**: `SwiftCompilerSources` unconditionally depends
-  on an in-tree `swift-stdlib-wasi-wasm32` target when cross-compiling, which does not
-  exist when the host stdlib comes prebuilt from the SDK. The patch makes that dependency
-  conditional on the target existing.
+  `SWIFT_HOST_VARIANT_SDK=WASI`. Nothing needs teaching that wasm-as-a-host exists.
+* **`LLVM_TABLEGEN` and `CLANG_TABLEGEN` must be passed explicitly**, or Swift insists on
+  an `${LLVM_BINARY_DIR}/NATIVE` directory a cross build has no reason to have.
+* **cmark-gfm must be built, not just checked out** — hence Stage 15. It cross-compiles
+  to wasm with no patches at all.
+* **Point `SWIFT_WASI_SYSROOT_PATH` at wasi-sdk's sysroot, not the Swift SDK's
+  `WASI.sdk`.** Their libc++ builds differ: wasi-sdk sets `_LIBCPP_HAS_THREADS=1`, the
+  Swift SDK sets `0`. LLVM is compiled against the former and
+  `llvm/Support/Mutex.h` uses `std::recursive_mutex` unconditionally. Beyond the compile
+  error, mixing them would link two libc++ ABIs into one binary.
+* **The wasi-libc emulation defines are mandatory**, not tuning: Swift's C++ includes
+  `<signal.h>`, which hard-errors without `-D_WASI_EMULATED_SIGNAL`.
+
+### Three upstream bugs this surfaced
+
+* **`LLVM_ABI` and `CLANG_ABI` are undefined on wasm.** Both `llvm/Support/Compiler.h` and
+  `clang/Support/Compiler.h` end their export-macro chain with
+  `defined(__MACH__) || defined(__WASM__) || defined(__EMSCRIPTEN__)`. No compiler defines
+  `__WASM__` — clang spells it `__wasm__` — and wasm is not ELF, so no branch matches and
+  the macros disappear. Every consumer then fails to parse TableGen output with "variable
+  has incomplete type 'class CLANG_ABI'". LLVM's own build escapes this by defining
+  `LLVM_BUILD_STATIC`; consumers such as Swift do not.
+* **Swift requires libuuid on every non-Darwin, non-Windows host.** There is no libuuid for
+  wasm, so `find_package(UUID REQUIRED)` found the *host's* and put `-I/usr/include` on
+  every command line, where glibc's `assert.h` shadowed the wasi sysroot's and broke every
+  translation unit including `<cassert>`. `lib/Basic/UUID.cpp` now implements the six
+  operations directly for WASI.
+* **C++ interop is broken for `wasm32-unknown-wasip1`** in the stock Swift 6.3.3 SDK:
+  importing any C++ module hits a Clang module cycle, `SwiftWASILibc -> std_inttypes_h ->
+  SwiftWASILibc`. It reproduces with a two-line Swift file against the stock SDK, so it is
+  an upstream SwiftWasm bug. This is why `SWIFT_ENABLE_SWIFT_IN_SWIFT` is OFF for the first
+  working configuration: the compiler's Swift-implemented modules need interop. The cost is
+  the Swift-implemented SIL optimizer passes, which a frontend compiling at `-Onone` can do
+  without, and it is the switch to flip once interop is fixed.
 
 ### The part that is not a build problem
 
