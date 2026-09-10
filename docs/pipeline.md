@@ -92,6 +92,33 @@ patches stay small enough to upstream. Regenerate them after editing the checkou
 
 ## Stage 3 — `swift-frontend` on a wasm host
 
-Not yet implemented. It builds on Stage 2's LLVM and adds the Swift frontend; the driver
-is deliberately not used, because there is no `fork`/`exec` under WASI — see
-[architecture.md](architecture.md).
+`toolchain/scripts/30-swift-frontend-wasm.sh` exists but **has not been run to
+completion**. Every flag in it is researched from swiftlang/swift @ swift-6.3.3-RELEASE
+rather than verified by a successful build. What the reading established:
+
+* **Swift's CMake already knows WASI as a host.** `CMakeLists.txt` maps
+  `CMAKE_SYSTEM_NAME=WASI` to `SWIFT_HOST_VARIANT_SDK=WASI`. Nothing needs to be taught
+  that wasm-as-a-host is a concept — a better starting position than the prior-art
+  survey suggested.
+* **There is a supported cross-compile path for the Swift-implemented parts of the
+  compiler.** Setting `SWIFT_NATIVE_SWIFT_TOOLS_PATH` plus
+  `BOOTSTRAPPING_MODE=CROSSCOMPILE` makes a previously built native `swiftc` build the
+  compiler's Swift modules for the target host. A native Swift 6.3.3 that can target
+  `wasm32-unknown-wasip1` is exactly what Stage 0 already installs.
+* **clang has to be cross-built too.** `swift-frontend` embeds ClangImporter, so Stage 3
+  configures its own `LLVM_ENABLE_PROJECTS="clang;lld"` build rather than reusing
+  Stage 2's lld-only one. This is the bulk of the wall-clock cost.
+
+### The part that is not a build problem
+
+**Macros and compiler plugins cannot work in-browser as designed.** Swift implements them
+by spawning a plugin executable and talking to it over a pipe. WASI has no way to spawn
+anything — that is precisely what `WASI/Program.inc` reports rather than pretending
+otherwise. So the first working configuration must set `SWIFT_BUILD_SWIFT_SYNTAX=OFF`,
+and macro support needs plugins redesigned as in-process wasm modules loaded by the
+embedder. That is a design project, not a porting one, and it should be planned for
+rather than discovered late.
+
+The other ceiling worth planning around is wasm32's 4 GiB address space: single-file
+compiles should fit, larger whole-module builds may not, which is why the IDE keeps a
+`RemoteBackend` behind the same interface.

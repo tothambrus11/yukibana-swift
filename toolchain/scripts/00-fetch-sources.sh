@@ -20,4 +20,22 @@ else
     https://github.com/swiftlang/llvm-project.git "$LLVM_SRC"
 fi
 
+# Stage 30 inputs. Fetched here so the whole pipeline has one entry point, even though
+# the swift-frontend build is not yet proven.
+if [[ -d "${YUKIBANA_SRC}/swift/lib" ]]; then
+  log "swift already present"
+else
+  log "cloning swiftlang/swift @ ${SWIFT_TAG} (shallow)"
+  git clone --depth 1 --branch "$SWIFT_TAG" --single-branch \
+    https://github.com/swiftlang/swift.git "${YUKIBANA_SRC}/swift"
+fi
+
+if [[ -d "${YUKIBANA_SRC}/swift-cmark/src" ]]; then
+  log "swift-cmark already present"
+else
+  log "cloning swiftlang/swift-cmark @ ${SWIFT_TAG} (shallow)"
+  git clone --depth 1 --branch "$SWIFT_TAG" --single-branch \
+    https://github.com/swiftlang/swift-cmark.git "${YUKIBANA_SRC}/swift-cmark"
+fi
+
 log "sources ready"
