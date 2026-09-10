@@ -15,9 +15,8 @@
 #     and BOOTSTRAPPING_MODE=CROSSCOMPILE, and the native swiftc builds the compiler's
 #     Swift modules for the target host. We have exactly that: a native Swift 6.3.3 that
 #     can target wasm32-unknown-wasip1.
-#   * swift-frontend embeds ClangImporter, so clang must be cross-built too — that is
-#     why this stage configures its own LLVM build rather than reusing Stage 20's
-#     lld-only one.
+#   * swift-frontend embeds ClangImporter, so clang must be cross-built too — which is
+#     why Stage 20 builds "clang;lld" into the tree this stage consumes.
 #
 # The known-hard part is NOT the build system. It is that macros and compiler plugins
 # are implemented by spawning plugin executables, and WASI has no way to spawn anything
@@ -31,7 +30,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
 : "${SWIFT_CMARK_SRC:=${YUKIBANA_SRC}/swift-cmark}"
 : "${NATIVE_SWIFT_BIN:=${HOME}/.local/share/swiftly/bin}"
 
-LLVM_BUILD="${YUKIBANA_BUILD}/wasm-llvm"   # LLVM + clang + lld for the wasm host
+LLVM_BUILD="${YUKIBANA_BUILD}/wasm-llvm"   # produced by 20-llvm-wasm.sh
 SWIFT_BUILD="${YUKIBANA_BUILD}/wasm-swift"
 HOST_BIN="${YUKIBANA_BUILD}/host/bin"
 
@@ -45,34 +44,9 @@ WASI_EMULATION_LIBS="-lwasi-emulated-mman -lwasi-emulated-signal -lwasi-emulated
 STACK_SIZE=16777216
 
 # --- 1. LLVM + clang + lld for the wasm host ----------------------------------
-log "configuring LLVM+clang+lld for ${WASM_TARGET}"
-cmake -G Ninja -S "${LLVM_SRC}/llvm" -B "$LLVM_BUILD" \
-  -DCMAKE_TOOLCHAIN_FILE="${WASI_SDK_PATH}/share/cmake/wasi-sdk-p1.cmake" \
-  -DWASI_SDK_PREFIX="${WASI_SDK_PATH}" \
-  -DUNIX=1 \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="${YUKIBANA_OUT}/wasm-llvm" \
-  -DLLVM_ENABLE_PROJECTS="clang;lld" \
-  -DLLVM_TARGETS_TO_BUILD=WebAssembly \
-  -DLLVM_NATIVE_TOOL_DIR="${HOST_BIN}" \
-  -DLLVM_DEFAULT_TARGET_TRIPLE="${WASM_TARGET}" \
-  -DLLVM_HOST_TRIPLE="${WASM_TARGET}" \
-  -DLLVM_ENABLE_THREADS=OFF \
-  -DLLVM_ENABLE_PIC=OFF \
-  -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF \
-  -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBPFM=OFF \
-  -DLLVM_ENABLE_CRASH_OVERRIDES=OFF -DLLVM_ENABLE_BACKTRACES=OFF \
-  -DLLVM_ENABLE_UNWIND_TABLES=OFF \
-  -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
-  -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_UTILS=OFF \
-  -DCLANG_ENABLE_STATIC_ANALYZER=OFF -DCLANG_ENABLE_ARCMT=OFF \
-  -DCMAKE_CXX_FLAGS="${WASI_EMULATION_DEFINES} -fno-exceptions" \
-  -DCMAKE_C_FLAGS="${WASI_EMULATION_DEFINES}" \
-  -DCMAKE_EXE_LINKER_FLAGS="${WASI_EMULATION_LIBS} -Wl,-z,stack-size=${STACK_SIZE}"
-
-log "building LLVM+clang+lld (hours, not minutes)"
-ninja -C "$LLVM_BUILD" -j "$JOBS"
-ninja -C "$LLVM_BUILD" -j "$JOBS" install
+# Built by Stage 20; this stage only checks it is there.
+[[ -d "${LLVM_BUILD}/lib/cmake/llvm" ]] ||
+  die "run 20-llvm-wasm.sh with LLVM_PROJECTS='clang;lld' first"
 
 # --- 2. swift-frontend --------------------------------------------------------
 log "configuring swift-frontend for ${WASM_TARGET}"
