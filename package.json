@@ -1,0 +1,17 @@
+{
+  "name": "yukibana",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An online Swift IDE where the compiler and the compiled program are both WebAssembly",
+  "license": "MIT",
+  "workspaces": [
+    "packages/runtime",
+    "packages/theia-yukibana",
+    "packages/playground",
+    "packages/ide"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @yukibana/runtime && npm run build --workspace @yukibana/theia-extension",
+    "test": "npm test --workspace @yukibana/runtime && npm test --workspace @yukibana/playground"
+  }
+}

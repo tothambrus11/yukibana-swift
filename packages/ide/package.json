@@ -16,7 +16,9 @@
     "@theia/output": "1.75.0",
     "@theia/preferences": "1.75.0",
     "@theia/workspace": "1.75.0",
-    "@yukibana/theia-extension": "file:../theia-yukibana"
+    "@yukibana/theia-extension": "file:../theia-yukibana",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@theia/cli": "1.75.0"
@@ -33,7 +35,9 @@
         "applicationName": "Yukibana",
         "preferences": {
           "files.enableTrash": false,
-          "editor.fontSize": 13
+          "editor.fontSize": 13,
+          "security.workspace.trust.enabled": false,
+          "workbench.colorTheme": "dark"
         }
       }
     }

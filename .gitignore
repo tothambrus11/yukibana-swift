@@ -12,3 +12,8 @@ packages/playground/public/hello.swift
 packages/playground/public/swift-parse.wasm
 lib/
 toolchain/build/
+packages/ide/lib/
+packages/ide/src-gen/
+packages/ide/gen-webpack*.js
+packages/ide/public/toolchain/
+packages/*/lib/

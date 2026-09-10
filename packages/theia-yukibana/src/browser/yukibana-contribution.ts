@@ -3,13 +3,16 @@ import { Command, CommandContribution, CommandRegistry, MessageService } from "@
 import { MenuContribution, MenuModelRegistry } from "@theia/core/lib/common/menu";
 import { CommonMenus } from "@theia/core/lib/browser";
 import { EditorManager } from "@theia/editor/lib/browser";
+import { WorkspaceService } from "@theia/workspace/lib/browser";
+import { FileService } from "@theia/filesystem/lib/browser/file-service";
 import { OutputChannelManager, OutputChannelSeverity } from "@theia/output/lib/browser/output-channel";
 import { VirtualFS, runWasi } from "@yukibana/runtime";
 import type { CompilerBackend } from "@yukibana/runtime";
 
 export const BuildAndRunSwift: Command = {
   id: "yukibana.buildAndRun",
-  label: "Yukibana: Build and Run Swift File",
+  // The category already prefixes this in the palette; repeating it reads as a stutter.
+  label: "Build and Run Swift File",
   category: "Yukibana",
 };
 
@@ -23,13 +26,17 @@ export const BuildAndRunSwift: Command = {
 @injectable()
 export class YukibanaContribution implements CommandContribution, MenuContribution {
   @inject(EditorManager) protected readonly editorManager!: EditorManager;
+  @inject(WorkspaceService) protected readonly workspaceService!: WorkspaceService;
+  @inject(FileService) protected readonly fileService!: FileService;
   @inject(OutputChannelManager) protected readonly outputChannels!: OutputChannelManager;
   @inject(MessageService) protected readonly messages!: MessageService;
   @inject(Symbol.for("YukibanaCompilerBackend")) protected readonly backend!: CompilerBackend;
 
   registerCommands(commands: CommandRegistry): void {
+    // Deliberately always enabled: Theia hides disabled commands from the palette, so
+    // gating on "a .swift editor is open" made the command look as though the extension
+    // had not loaded at all. buildAndRun() explains the situation instead.
     commands.registerCommand(BuildAndRunSwift, {
-      isEnabled: () => this.currentSwiftEditor() !== undefined,
       execute: () => this.buildAndRun(),
     });
   }
@@ -47,10 +54,32 @@ export class YukibanaContribution implements CommandContribution, MenuContributi
     return editor.uri.path.ext === ".swift" ? editor : undefined;
   }
 
-  protected async buildAndRun(): Promise<void> {
+  /**
+   * What to build: the focused .swift editor, or — when nothing relevant is focused —
+   * the first .swift file in the workspace. "Run" should work right after opening a
+   * project, before anything has been clicked.
+   */
+  protected async resolveSource(): Promise<{ path: string; text: string } | undefined> {
     const editor = this.currentSwiftEditor();
-    if (!editor) {
-      this.messages.warn("Open a .swift file first.");
+    if (editor) {
+      return { path: editor.uri.path.toString(), text: editor.document.getText() };
+    }
+
+    for (const root of this.workspaceService.tryGetRoots()) {
+      const dir = await this.fileService.resolve(root.resource);
+      const swift = dir.children?.find((child) => child.resource.path.ext === ".swift");
+      if (swift) {
+        const contents = await this.fileService.read(swift.resource);
+        return { path: swift.resource.path.toString(), text: contents.value };
+      }
+    }
+    return undefined;
+  }
+
+  protected async buildAndRun(): Promise<void> {
+    const source = await this.resolveSource();
+    if (!source) {
+      this.messages.warn("No .swift file to build: open one, or add one to the workspace.");
       return;
     }
 
@@ -58,12 +87,10 @@ export class YukibanaContribution implements CommandContribution, MenuContributi
     channel.show({ preserveFocus: true });
     channel.clear();
 
-    const path = editor.uri.path.toString();
+    const path = source.path;
     channel.appendLine(`Compiling ${path} with the ${this.backend.description} backend…`);
 
-    const result = await this.backend.compile({
-      sources: { [path]: editor.document.getText() },
-    });
+    const result = await this.backend.compile({ sources: { [path]: source.text } });
 
     for (const diagnostic of result.diagnostics) {
       const where =
