@@ -8,19 +8,51 @@ backend anywhere. What makes deployment non-obvious is size: the toolchain is ab
 
 | What | Size | Where it goes |
 | --- | --- | --- |
-| The app (`bundle.js`, CSS, workers, HTML) | ~54 MiB, largest file 11 MiB | static host / CDN |
-| `swift-frontend.wasm` | 146 MiB | object storage (R2, S3, …) |
-| `swift-sysroot-core.tar` | 99 MiB | object storage |
-| `wasm-ld.wasm` | 57 MiB | object storage |
+| The app (`bundle.js`, CSS, workers, HTML) | ~38 MiB, largest file 11 MiB | static assets |
+| `swift-frontend.wasm` | 146 MiB | its GitHub release, proxied |
+| `swift-sysroot-core.tar` | 99 MiB | its GitHub release, proxied |
+| `wasm-ld.wasm` | 57 MiB | its GitHub release, proxied |
 
-Cloudflare Workers caps [individual static assets at 25 MiB](https://developers.cloudflare.com/workers/platform/limits/),
+Cloudflare caps [individual static assets at 25 MiB](https://developers.cloudflare.com/workers/platform/limits/),
 so the toolchain cannot be uploaded with the app, and neither can source maps (44 MiB).
 `scripts/prepare-deploy.sh` assembles a directory with both excluded and **fails if
 anything left in it exceeds the cap**, so this is caught before a deploy rather than
 during one.
 
-The app reads the toolchain's location from `toolchain.json` at startup, which means the
-bucket can move without rebuilding.
+## Serving the toolchain from its GitHub release
+
+The artifacts stay in the release that produced them, and the Worker in
+`packages/ide/src/worker.js` serves them under `/toolchain/*`. Nothing else is needed —
+no bucket, no upload step, no second copy that can drift from the release.
+
+A page cannot fetch release assets directly, which is why the proxy exists:
+
+* GitHub sends **no `Access-Control-Allow-Origin`** on release assets — verified, a
+  cross-origin `fetch` fails outright with "Failed to fetch", and `OPTIONS` returns 405.
+* They are served as `application/octet-stream`, which `WebAssembly.compileStreaming`
+  rejects.
+
+Through the Worker the browser sees them on the site's own origin, so there is no CORS
+at all, with `application/wasm` and `Cache-Control: immutable` set by us. The upstream
+fetch uses `cacheEverything` with a year-long TTL, so GitHub is hit once per edge
+location rather than once per visitor; [the 512 MB cacheable-object limit](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/)
+is well above the 146 MiB of the largest artifact.
+
+Point it at a release with the `TOOLCHAIN_RELEASE` var in `packages/ide/wrangler.jsonc`;
+it defaults to `releases/latest/download`. `TOOLCHAIN_BASE_URL` can then be left unset,
+since `/toolchain` is the app's default.
+
+Verified end to end in Chromium: `WebAssembly.compileStreaming(fetch("/toolchain/wasm-ld.wasm"))`
+through the Worker compiled a real 57 MiB module in 2021 ms, with path traversal
+rejected (400) and a missing artifact returning 404.
+
+### If you would rather use R2
+
+Object storage is still an option, and `scripts/setup-r2.sh` plus
+`scripts/upload-toolchain.sh` set it up — see [the R2 section below](#the-r2-alternative).
+It costs an upload step and a second copy of the artifacts, but serves them
+pre-compressed (69 MiB instead of 302 MiB), which the GitHub proxy cannot do because the
+release stores them uncompressed.
 
 ## Deploying to Cloudflare
 
@@ -36,14 +68,13 @@ Run it from the app directory, not the repository root:
 ```sh
 cd packages/ide
 npm run build:prod                                   # theia build --mode production
-TOOLCHAIN_BASE_URL="https://toolchain.example.com" \
-  npm run prepare-deploy                             # -> packages/ide/deploy
+npm run prepare-deploy                               # -> packages/ide/deploy
 npx wrangler deploy                                  # reads packages/ide/wrangler.jsonc
 ```
 
 `npm run deploy` chains all three.
 
-## The toolchain bucket
+## The R2 alternative
 
 There is no URL until a bucket exists and has public access enabled:
 

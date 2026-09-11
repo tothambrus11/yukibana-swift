@@ -26,7 +26,14 @@ createServer((req, res) => {
   try {
     if (statSync(file).isDirectory()) file = join(file, "index.html");
   } catch {
-    file = join(root, "index.html"); // SPA fallback
+    // SPA fallback, but only for route-like paths. Falling back for a missing .wasm or
+    // .tar hands the caller an HTML page with the wrong content type, which surfaces
+    // much later as "expected magic word 00 61 73 6d" — a 404 says what happened.
+    if (extname(candidate)) {
+      res.writeHead(404, { "Content-Type": "text/plain" }).end("not found\n");
+      return;
+    }
+    file = join(root, "index.html");
   }
   try {
     const { size } = statSync(file);
