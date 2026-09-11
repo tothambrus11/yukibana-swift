@@ -29,3 +29,11 @@ packages/*/deploy/
 # TypeScript output belongs in dist/ and lib/; never beside the sources.
 packages/*/src/**/*.js
 packages/*/src/**/*.d.ts
+
+# Theia generates these from the "theia.target" in package.json. gen-esbuild.*.mjs say
+# so in their own header; esbuild.mjs is written once and then never rewritten, so a
+# committed copy pins the build to whichever target was set when it was first created.
+# Committing them made the browser-only build still try to bundle a backend that
+# browser-only does not generate.
+packages/ide/esbuild.mjs
+packages/ide/gen-esbuild.*.mjs
