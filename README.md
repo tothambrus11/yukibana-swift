@@ -26,7 +26,7 @@ struct Point: CustomStringConvertible {
   var description: String { "(\(x), \(y))" }
 }
 let points = (1...3).map { Point(x: $0, y: $0 * $0) }
-print("points: \(points)")        // points: [(1, 1), (2, 4), (3, 9)]
+print("points: \(points)")  // points: [(1, 1), (2, 4), (3, 9)]
 ```
 
 That compiles in about two seconds in the tab and runs in 34 ms. Structs, protocol
