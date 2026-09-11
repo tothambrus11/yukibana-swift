@@ -1,4 +1,4 @@
-# Yukibana
+# Yukibana Swift
 
 An online Swift IDE in the shape of [abiexplorer.org](https://abiexplorer.org) ("clang in
 your browser"), built on [Theia](https://theia-ide.org/), where **both the compiler and the
