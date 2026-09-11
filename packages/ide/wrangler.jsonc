@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yukibana",
+  "compatibility_date": "2026-09-01",
+
+  // Only the app is uploaded. The wasm toolchain is not here: individual assets are
+  // capped at 25 MiB and swift-frontend.wasm is 146 MiB, so it lives in R2 and the app
+  // reads its URL from toolchain.json at startup. scripts/prepare-deploy.sh assembles
+  // this directory and fails the build if anything in it exceeds the cap.
+  "assets": {
+    "directory": "./deploy",
+    "not_found_handling": "single-page-application"
+  }
+}

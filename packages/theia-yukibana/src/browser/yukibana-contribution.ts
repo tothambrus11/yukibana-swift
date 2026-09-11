@@ -91,7 +91,26 @@ export class YukibanaContribution implements CommandContribution, MenuContributi
   protected worker?: Worker;
   protected nextRequestId = 0;
 
-  protected compileInWorker(path: string, text: string) {
+  /**
+   * Where the toolchain is served from.
+   *
+   * The artifacts are far too large for a static host's per-file limits (Cloudflare
+   * caps individual assets at 25 MiB; swift-frontend.wasm is 146 MiB), so a real
+   * deployment keeps them in object storage instead. deploy/toolchain.json carries that
+   * URL, which means the bucket can move without rebuilding the app. Same-origin
+   * /toolchain is the fallback, and is what a local static server serves.
+   */
+  protected toolchainUrl?: Promise<string>;
+
+  protected resolveToolchainUrl(): Promise<string> {
+    this.toolchainUrl ??= fetch("/toolchain.json")
+      .then((response) => (response.ok ? response.json() : undefined))
+      .then((config?: { baseUrl?: string }) => config?.baseUrl || "/toolchain")
+      .catch(() => "/toolchain");
+    return this.toolchainUrl;
+  }
+
+  protected async compileInWorker(path: string, text: string) {
     this.worker ??= new Worker("/compile-worker.js", { type: "module" });
     const worker = this.worker;
     const id = this.nextRequestId++;
@@ -118,8 +137,10 @@ export class YukibanaContribution implements CommandContribution, MenuContributi
         });
       };
       worker.addEventListener("message", onMessage);
-      const request: CompileWorkerRequest = { id, sources: { [path]: text } };
-      worker.postMessage(request);
+      void this.resolveToolchainUrl().then((toolchainUrl) => {
+        const request: CompileWorkerRequest = { id, sources: { [path]: text }, toolchainUrl };
+        worker.postMessage(request);
+      });
     });
   }
 

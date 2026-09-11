@@ -27,7 +27,10 @@
     "clean": "theia clean",
     "build": "theia build --mode development",
     "start": "theia start --hostname 0.0.0.0 --port 3000",
-    "serve": "node ../../scripts/serve-static.js lib/frontend 3000"
+    "serve": "node ../../scripts/serve-static.js lib/frontend 3000",
+    "build:prod": "theia build --mode production",
+    "prepare-deploy": "bash ../../scripts/prepare-deploy.sh ide",
+    "deploy": "npm run build:prod && npm run prepare-deploy && wrangler deploy"
   },
   "theia": {
     "target": "browser-only",

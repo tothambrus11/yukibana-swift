@@ -35,6 +35,9 @@ createServer((req, res) => {
       "Content-Length": size,
       // What a CDN would send for immutable, content-addressed assets.
       "Cache-Control": extname(file) === ".html" ? "no-cache" : "public, max-age=31536000",
+      // Lets this stand in for an object store on another origin (R2), which is where
+      // the toolchain has to live: its files are far past a static host's per-file cap.
+      "Access-Control-Allow-Origin": "*",
     });
     createReadStream(file).pipe(res);
   } catch {
