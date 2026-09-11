@@ -26,9 +26,13 @@ packages/ide/lib/
 # Assembled by scripts/prepare-deploy.sh from the build output; never committed.
 packages/*/deploy/
 
-# TypeScript output belongs in dist/ and lib/; never beside the sources.
-packages/*/src/**/*.js
-packages/*/src/**/*.d.ts
+# TypeScript output belongs in dist/ and lib/; never beside the sources. Scoped to the
+# two TypeScript packages: packages/ide/src holds a hand-written Worker, and a wildcard
+# here silently excluded it from the repository while wrangler.jsonc pointed main at it.
+packages/runtime/src/**/*.js
+packages/runtime/src/**/*.d.ts
+packages/theia-yukibana/src/**/*.js
+packages/theia-yukibana/src/**/*.d.ts
 
 # Theia generates these from the "theia.target" in package.json. gen-esbuild.*.mjs say
 # so in their own header; esbuild.mjs is written once and then never rewritten, so a
