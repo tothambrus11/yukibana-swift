@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "yukibana",
+  "name": "yukibana-swift",
   "compatibility_date": "2026-09-01",
 
   // Claim the hostname as part of the deploy. Without this the domain stays attached to
