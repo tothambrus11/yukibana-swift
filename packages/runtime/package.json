@@ -18,7 +18,8 @@
   "scripts": {
     "build": "tsc && npm run bundle:worker",
     "test": "npm run build && node --test test/*.test.js",
-    "bundle:worker": "esbuild src/compile-worker.ts --bundle --format=esm --platform=browser --outfile=dist/compile-worker.js"
+    "bundle:worker": "esbuild src/compile-worker.ts --bundle --format=esm --platform=browser --outfile=dist/compile-worker.js",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2"

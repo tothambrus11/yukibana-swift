@@ -9,9 +9,19 @@
     "declaration": true,
     "outDir": "lib",
     "rootDir": "src",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../runtime"
+    }
+  ]
 }

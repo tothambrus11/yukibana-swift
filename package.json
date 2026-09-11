@@ -16,5 +16,8 @@
     "build:ide": "npm run build -w @yukibana/runtime && npm run build -w @yukibana/theia-extension && npm run build:prod -w @yukibana/ide",
     "stage:ide": "bash scripts/prepare-deploy.sh ide",
     "deploy:ide": "npm run build:ide && npm run stage:ide && wrangler deploy -c packages/ide/wrangler.jsonc"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
   }
 }

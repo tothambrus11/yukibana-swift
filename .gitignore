@@ -25,3 +25,7 @@ packages/ide/lib/
 
 # Assembled by scripts/prepare-deploy.sh from the build output; never committed.
 packages/*/deploy/
+
+# TypeScript output belongs in dist/ and lib/; never beside the sources.
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts

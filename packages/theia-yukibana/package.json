@@ -24,9 +24,10 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
-    "test": "tsc"
+    "build": "tsc -b",
+    "watch": "tsc -b -w",
+    "test": "tsc",
+    "prepare": "npm run build"
   },
   "theiaExtensions": [
     {
