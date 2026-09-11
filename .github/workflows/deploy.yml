@@ -1,0 +1,79 @@
+name: Deploy to Cloudflare
+
+# An alternative to Cloudflare Workers Builds, kept in the repository where it can be
+# read and changed like any other code. The dashboard's deploy command is invisible from
+# here, and a wrong one fails quietly: `wrangler versions upload` uploads a version
+# without routing traffic to it, so the site keeps serving the previous deployment while
+# the build reports success.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` runs each workspace's prepare script, which builds @yukibana/runtime and
+      # the Theia extension. The IDE build needs both to exist before it bundles.
+      - name: Install
+        run: npm ci
+
+      - name: Build the IDE
+        run: npm run build:ide
+
+      # Assembles packages/ide/deploy, excluding the wasm toolchain and source maps, and
+      # fails if anything left exceeds Cloudflare's 25 MiB per-asset limit.
+      - name: Stage the deployable site
+        run: npm run stage:ide
+
+      - name: Check for a Cloudflare token
+        id: token
+        run: |
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set; built the site but did not deploy it."
+          fi
+
+      # deploy, not `versions upload`: this has to route traffic, not just upload.
+      - name: Deploy
+        if: steps.token.outputs.present == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy
+
+      - name: Confirm the site is serving the app
+        if: steps.token.outputs.present == 'true'
+        run: |
+          sleep 10
+          body="$(curl -fsSL https://swift.yukibana.dev/ || true)"
+          # The placeholder Worker answers "Hello world" in plain text on every path, so
+          # a deploy that silently did not take effect looks exactly like a healthy one.
+          case "$body" in
+            *"Hello world"*)
+              echo "::error::swift.yukibana.dev is still serving the placeholder Worker."
+              exit 1 ;;
+            *"<html"*|*"<!doctype"*|*"<!DOCTYPE"*)
+              echo "swift.yukibana.dev is serving the IDE." ;;
+            *)
+              echo "::error::Unexpected response from swift.yukibana.dev:"
+              printf '%s\n' "$body" | head -c 300
+              exit 1 ;;
+          esac
