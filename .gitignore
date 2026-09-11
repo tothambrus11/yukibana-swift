@@ -17,3 +17,8 @@ packages/ide/src-gen/
 packages/ide/gen-webpack*.js
 packages/ide/public/toolchain/
 packages/*/lib/
+
+# Toolchain artifacts staged for the web apps: hundreds of MiB, produced by
+# swift-toolchain-wasm and fetched from its releases, never committed here.
+packages/playground/public/toolchain/
+packages/ide/lib/
