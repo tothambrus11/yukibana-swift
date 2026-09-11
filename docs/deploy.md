@@ -45,12 +45,24 @@ npx wrangler deploy                                  # reads packages/ide/wrangl
 
 ## The toolchain bucket
 
+There is no URL until a bucket exists and has public access enabled:
+
 ```sh
-./scripts/fetch-toolchain.sh                                  # from a release, or a local build
+BUCKET=yukibana-toolchain ./scripts/setup-r2.sh   # create, set CORS, print the URL
 BUCKET=yukibana-toolchain ./scripts/upload-toolchain.sh
 ```
 
-The script uploads each artifact **gzipped, under its plain name**, with
+`setup-r2.sh` prints an `https://pub-<hash>.r2.dev` URL. That is fine for a first test,
+but Cloudflare [rate-limits r2.dev and documents it as development-only](https://developers.cloudflare.com/r2/buckets/public-buckets/),
+and a cold visit pulls ~69 MiB from this bucket, so production wants a custom domain:
+
+```sh
+npx wrangler r2 bucket domain add yukibana-toolchain --domain toolchain.yourdomain.com
+```
+
+Whichever you use becomes `TOOLCHAIN_BASE_URL` in the site's build settings.
+
+`upload-toolchain.sh` stores each artifact **gzipped, under its plain name**, with
 `Content-Encoding: gzip` and the right `Content-Type`. That matters more than it looks:
 
 | | raw | gzipped |
