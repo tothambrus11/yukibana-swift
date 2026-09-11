@@ -46,24 +46,36 @@ npx wrangler deploy                                  # reads packages/ide/wrangl
 ## The toolchain bucket
 
 ```sh
-# From the swift-toolchain-wasm release (or a local build).
-./scripts/fetch-toolchain.sh
-cd packages/playground/public/toolchain
-for f in swift-frontend.wasm wasm-ld.wasm swift-sysroot-core.tar; do
-  npx wrangler r2 object put "yukibana-toolchain/$f" --file "$f" --remote
-done
+./scripts/fetch-toolchain.sh                                  # from a release, or a local build
+BUCKET=yukibana-toolchain ./scripts/upload-toolchain.sh
 ```
+
+The script uploads each artifact **gzipped, under its plain name**, with
+`Content-Encoding: gzip` and the right `Content-Type`. That matters more than it looks:
+
+| | raw | gzipped |
+| --- | --- | --- |
+| `swift-frontend.wasm` | 146 MB | 35 MB |
+| `swift-sysroot-core.tar` | 99 MB | 20 MB |
+| `wasm-ld.wasm` | 57 MB | 14 MB |
+| **total per cold visitor** | **302 MB** | **69 MB** |
+
+The browser decompresses transparently and still sees `application/wasm`, so
+`WebAssembly.compileStreaming` works on it directly — verified in Chromium: a
+gzip-encoded `wasm-ld.wasm` streamed in 14 MB and compiled in 953 ms. Uploading the
+artifacts as `*.gz` instead would force the app to decompress them itself, wasting a
+full extra copy of a 146 MiB module in memory.
 
 Two things the bucket must do, or the browser will refuse the files:
 
 * **CORS.** The app fetches them from another origin, so the bucket needs
   `Access-Control-Allow-Origin` for the site's origin. Without it
   `WebAssembly.compileStreaming` fails.
-* **Content types.** `.wasm` must be served as `application/wasm`, otherwise
-  `compileStreaming` rejects it and the fallback path wastes a copy of the module.
+* **Content types.** `.wasm` must be `application/wasm`; `compileStreaming` rejects
+  anything else.
 
-Set a long `Cache-Control` (`public, max-age=31536000, immutable`) — the artifacts are
-content-addressed by release, and a returning visitor should not pay 300 MiB twice.
+The script sets `Cache-Control: public, max-age=31536000, immutable` — the artifacts are
+fixed for a given release, and a returning visitor should not pay for them twice.
 
 ## Verified
 
@@ -74,8 +86,8 @@ origins.
 
 ## Still worth doing
 
-* **Precompression.** `swift-frontend.wasm` is 146 MiB raw, 36 MiB gzipped. Serve
-  `.br`/`.gz` with `Content-Encoding` rather than compressing on the fly.
+* **Brotli.** gzip already cuts the cold load from 302 MB to 69 MB; brotli would do
+  better still, at the cost of a slower upload-time compression step.
 * **Client-side persistence.** The HTTP cache is not obliged to keep a 146 MiB entry;
   storing the toolchain in OPFS or the Cache API makes a second visit instant.
 * **Browser matrix.** Only Chromium has been tested. Safari, Firefox and phones are
