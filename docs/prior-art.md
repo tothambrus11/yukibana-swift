@@ -89,6 +89,46 @@ demonstrable:
 * **Stage 4** — Theia IDE wired to whichever stages are done, degrading gracefully to a
   server-side compile when the in-browser compiler is unavailable.
 
+## Update — 2026-09-11: what changed after the prototype worked
+
+A re-audit of upstream found that two of the claims above are now out of date. Both are
+recorded here rather than edited away, because the original reasoning still explains why
+the project was sequenced the way it was.
+
+**"An LLVM-based compiler frontend can be built for a wasm host" understated the prior
+art.** LLVM has a long-open PR for exactly this —
+[llvm/llvm-project#92677, "Conditionalize use of POSIX features missing on
+WASI/WebAssembly"](https://github.com/llvm/llvm-project/pull/92677) (whitequark, open
+since May 2024, approved in principle, stalled on a design question about where WASI code
+should live). The same author ships LLVM/clang/lld for `wasm32-wasip1` out of tree as
+[YoWASP](https://www.npmjs.com/package/@yowasp/clang), currently LLVM 22.1.0, used by
+Compiler Explorer among others. Ten of the nineteen LLVM files this project patches are
+the same files that PR touches.
+
+**"The compiler half is unexplored territory" is no longer true — for a different wasm
+host.** In July 2026 upstream Swift landed an **Emscripten-hosted** toolchain effort on
+`main` ([Swift for Wasm July 2026
+updates](https://forums.swift.org/t/swift-for-wasm-july-2026-updates/88673)): 32-bit-safe
+compiler data structures ([swift#90326](https://github.com/swiftlang/swift/pull/90326)),
+optional immediate mode ([swift#90329](https://github.com/swiftlang/swift/pull/90329)),
+an Emscripten libc module fix under C++ interop
+([swift#90332](https://github.com/swiftlang/swift/pull/90332)), and CMake/build-script
+support ([swift#90334](https://github.com/swiftlang/swift/pull/90334),
+[swift#90337](https://github.com/swiftlang/swift/pull/90337)). Their host triple is
+`wasm32-unknown-emscripten`; this project's is `wasm32-unknown-wasip1`, and Emscripten
+emulates the POSIX process model that WASI simply does not have. So the two efforts
+converge on the same 32-bit and alignment bugs and diverge completely on process, signal
+and libc handling. A `wasm32-unknown-wasip1`-hosted `swift-frontend` still appears to be
+without precedent, and none of the upstream work is on `release/6.3`, this project's base.
+
+The full per-file audit — what is fixed upstream, what is reported, and what this project
+found that nobody has reported — lives in the toolchain repository at
+`docs/upstream-status.md`.
+
+Also worth noting: the from-scratch Swift-subset compiler mentioned above now has a
+forum thread, [MiniSwift](https://forums.swift.org/t/miniswift-swift-compiler-that-runs-in-the-browser-via-webassembly/85808).
+The assessment stands — it is a reimplementation, not the real frontend.
+
 ## Sources
 
 * <https://www.swift.org/documentation/articles/wasm-getting-started.html>
@@ -98,3 +138,6 @@ demonstrable:
 * <https://abiexplorer.org>
 * <https://github.com/tbfleming/cib>
 * <https://wasmer.io/posts/clang-in-browser>
+* <https://forums.swift.org/t/swift-for-wasm-july-2026-updates/88673>
+* <https://github.com/llvm/llvm-project/pull/92677>
+* <https://www.npmjs.com/package/@yowasp/clang>
