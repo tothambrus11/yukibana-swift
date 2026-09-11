@@ -13,10 +13,17 @@ cd ../ide && npm install && npm run build && npm start
 The build is large (Theia pulls in Monaco and webpacks the whole frontend), so it is not
 part of the default test loop; the extension itself typechecks and tests independently.
 
-## Why an IDE shell needs a server, when compiling does not
+## No backend at all
 
-Theia's browser target has a Node backend for the workspace, filesystem and preferences.
-That backend serves the IDE — it never compiles anything. Compilation happens in the tab,
-in a worker, against the wasm toolchain; the code the user writes never leaves the
-browser. The two facts are independent, and conflating them is the usual reason people
-assume an online IDE must upload your source.
+The app targets Theia's `browser-only` mode: the entire IDE is static files, and the
+workspace lives in the browser's own storage (OPFS). There is no Node process, which
+means it deploys to any static host or CDN, and "your code never leaves the tab" is true
+of the editor as well as the compiler.
+
+```sh
+npm run build     # -> lib/frontend, static
+npm run serve     # a server that can only hand over bytes, to prove the point
+```
+
+A first visit is seeded with a `/workspace/main.swift` sample so there is something to
+build immediately; it is never overwritten once the visitor has edited it.
