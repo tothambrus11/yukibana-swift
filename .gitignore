@@ -41,3 +41,6 @@ packages/theia-yukibana/src/**/*.d.ts
 # browser-only does not generate.
 packages/ide/esbuild.mjs
 packages/ide/gen-esbuild.*.mjs
+
+# wrangler's scratch directory: dev-server bundles and temp workers, never source.
+.wrangler/
