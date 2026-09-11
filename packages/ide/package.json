@@ -30,7 +30,7 @@
     "serve": "node ../../scripts/serve-static.js lib/frontend 3000",
     "build:prod": "theia build --mode production && cp ../runtime/dist/compile-worker.js lib/frontend/compile-worker.js",
     "prepare-deploy": "bash ../../scripts/prepare-deploy.sh ide",
-    "deploy": "npm run build:prod && npm run prepare-deploy && wrangler deploy",
+    "deploy": "npm run build:prod && npm run prepare-deploy && wrangler deploy -c ../../wrangler.jsonc",
     "copy:worker": "cp ../runtime/dist/compile-worker.js lib/frontend/compile-worker.js"
   },
   "theia": {

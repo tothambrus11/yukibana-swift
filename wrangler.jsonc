@@ -1,5 +1,5 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "yukibana-swift",
   "compatibility_date": "2026-09-01",
 
@@ -10,6 +10,10 @@
     { "pattern": "swift.yukibana.dev", "custom_domain": true }
   ],
 
+  // This config lives at the repository root, not in packages/ide, because Cloudflare
+  // Workers Builds runs its deploy command from the root: a config anywhere else needs
+  // an explicit -c, and the default `wrangler deploy` fails with "Missing entry-point".
+  //
   // Only the app is uploaded as static assets: individual assets are capped at 25 MiB
   // and swift-frontend.wasm is 146 MiB. scripts/prepare-deploy.sh assembles ./deploy and
   // fails the build if anything in it exceeds the cap.
@@ -17,9 +21,9 @@
   // The toolchain instead stays in its GitHub release, and the Worker proxies it under
   // /toolchain/* — same origin, so no CORS, with the content types wasm needs and edge
   // caching in front of GitHub.
-  "main": "src/worker.js",
+  "main": "packages/ide/src/worker.js",
   "assets": {
-    "directory": "./deploy",
+    "directory": "packages/ide/deploy",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },

@@ -63,16 +63,19 @@ Wrangler refuses to run at the root of an npm workspace:
   workspace instead of targeting a specific project.
 ```
 
-Run it from the app directory, not the repository root:
+Run it from the repository root, where `wrangler.jsonc` lives. Two commands look
+similar and are not: `wrangler versions upload` uploads a version **without routing
+traffic to it**, so the site keeps serving whatever was deployed before. Use
+`wrangler deploy`.
 
 ```sh
-cd packages/ide
-npm run build:prod                                   # theia build --mode production
-npm run prepare-deploy                               # -> packages/ide/deploy
-npx wrangler deploy                                  # reads packages/ide/wrangler.jsonc
+npm ci
+npm run build:ide     # runtime -> extension -> theia build --mode production
+npm run stage:ide     # -> packages/ide/deploy
+npx wrangler deploy   # reads ./wrangler.jsonc
 ```
 
-`npm run deploy` chains all three.
+`npm run deploy:ide` chains the last three.
 
 ## The R2 alternative
 
