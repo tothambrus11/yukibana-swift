@@ -3,6 +3,13 @@
   "name": "yukibana",
   "compatibility_date": "2026-09-01",
 
+  // Claim the hostname as part of the deploy. Without this the domain stays attached to
+  // whatever Worker holds it — a freshly created one answers "Hello world" on every
+  // path, which is indistinguishable from "my build did not deploy".
+  "routes": [
+    { "pattern": "swift.yukibana.dev", "custom_domain": true }
+  ],
+
   // Only the app is uploaded as static assets: individual assets are capped at 25 MiB
   // and swift-frontend.wasm is 146 MiB. scripts/prepare-deploy.sh assembles ./deploy and
   // fails the build if anything in it exceeds the cap.
