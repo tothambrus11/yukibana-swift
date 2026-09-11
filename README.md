@@ -1,7 +1,6 @@
 # Yukibana Swift
 
-An online Swift IDE in the shape of [abiexplorer.org](https://abiexplorer.org) ("clang in
-your browser"), built on [Theia](https://theia-ide.org/), where **both the compiler and the
+An online Swift IDE, built on [Theia](https://theia-ide.org/), where **both the compiler and the
 compiled program are WebAssembly running in the user's browser tab** — no compile server.
 
 See [docs/pipeline.md](docs/pipeline.md) for how to build it,
