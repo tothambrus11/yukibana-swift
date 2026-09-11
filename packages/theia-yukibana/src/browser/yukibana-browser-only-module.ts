@@ -2,12 +2,18 @@ import { ContainerModule } from "@theia/core/shared/inversify";
 import { CommandContribution } from "@theia/core/lib/common";
 import { MenuContribution } from "@theia/core/lib/common/menu";
 import { WorkspaceService } from "@theia/workspace/lib/browser";
+import { FrontendApplicationContribution } from "@theia/core/lib/browser";
 import { OPFSInitialization } from "@theia/filesystem/lib/browser-only/opfs-filesystem-initialization";
 import type { CompilerBackend } from "@yukibana/runtime";
 import { YukibanaContribution } from "./yukibana-contribution";
 import { WasmBackend } from "./wasm-backend";
+import { SwiftLanguageContribution } from "./swift-language";
 import { YukibanaCompilerBackend } from "./yukibana-frontend-module";
-import { YukibanaOPFSInitialization, YukibanaWorkspaceService } from "./browser-only-workspace";
+import {
+    YukibanaInitialLayout,
+    YukibanaOPFSInitialization,
+    YukibanaWorkspaceService,
+} from "./browser-only-workspace";
 
 /**
  * The frontend module for Theia's `browser-only` target: the whole IDE is static files
@@ -18,6 +24,10 @@ import { YukibanaOPFSInitialization, YukibanaWorkspaceService } from "./browser-
 export default new ContainerModule((bind, unbind, isBound, rebind) => {
     bind<CompilerBackend>(YukibanaCompilerBackend)
         .toConstantValue(new WasmBackend("6.3.3", "/toolchain"));
+    // Swift is not a language Monaco knows; register it so .swift is not "Plain Text".
+    bind(SwiftLanguageContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(SwiftLanguageContribution);
+
     bind(YukibanaContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(YukibanaContribution);
     bind(MenuContribution).toService(YukibanaContribution);
@@ -25,4 +35,8 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
     // Seed and open a workspace, so a first visit has something to build.
     rebind(OPFSInitialization).to(YukibanaOPFSInitialization).inSingletonScope();
     rebind(WorkspaceService).to(YukibanaWorkspaceService).inSingletonScope();
+
+    // Give a first visit something on screen: the sample open, the file tree revealed.
+    bind(YukibanaInitialLayout).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(YukibanaInitialLayout);
 });

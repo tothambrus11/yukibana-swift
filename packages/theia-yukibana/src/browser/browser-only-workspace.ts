@@ -1,4 +1,7 @@
-import { injectable } from "@theia/core/shared/inversify";
+import { inject, injectable } from "@theia/core/shared/inversify";
+import { FrontendApplication, FrontendApplicationContribution } from "@theia/core/lib/browser";
+import { EditorManager } from "@theia/editor/lib/browser";
+import { FileService } from "@theia/filesystem/lib/browser/file-service";
 import URI from "@theia/core/lib/common/uri";
 import { WorkspaceService } from "@theia/workspace/lib/browser";
 import { DefaultOPFSInitialization } from "@theia/filesystem/lib/browser-only/opfs-filesystem-initialization";
@@ -72,5 +75,41 @@ export class YukibanaOPFSInitialization extends DefaultOPFSInitialization {
 export class YukibanaWorkspaceService extends WorkspaceService {
     protected override getDefaultWorkspaceUri(): Promise<string> {
         return Promise.resolve(WORKSPACE_ROOT);
+    }
+}
+
+/**
+ * Opens the sample on arrival.
+ *
+ * Theia restores a layout when it has one, but a first visit has none, so the shell
+ * comes up with no editor and a collapsed explorer — an empty-looking IDE that gives a
+ * newcomer nothing to act on. This opens the workspace's Swift file and reveals the
+ * file tree, and defers entirely to a restored layout on later visits.
+ */
+@injectable()
+export class YukibanaInitialLayout implements FrontendApplicationContribution {
+    @inject(EditorManager) protected readonly editorManager!: EditorManager;
+    @inject(WorkspaceService) protected readonly workspaceService!: WorkspaceService;
+    @inject(FileService) protected readonly fileService!: FileService;
+
+    async onDidInitializeLayout(app: FrontendApplication): Promise<void> {
+        if (this.editorManager.all.length > 0) {
+            return; // The visitor's own layout was restored; leave it alone.
+        }
+
+        try {
+            app.shell.revealWidget("files");
+        } catch {
+            // The navigator is optional; not revealing it is not worth failing over.
+        }
+
+        for (const root of await this.workspaceService.roots) {
+            const dir = await this.fileService.resolve(root.resource);
+            const swift = dir.children?.find((child) => child.resource.path.ext === ".swift");
+            if (swift) {
+                await this.editorManager.open(swift.resource, { mode: "reveal" });
+                return;
+            }
+        }
     }
 }
