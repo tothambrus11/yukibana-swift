@@ -32,9 +32,17 @@ mkdir -p "$DEST"
 tar -C "$SRC" --exclude='toolchain' --exclude='*.map' --exclude='*.map.gz' -cf - . \
   | tar -C "$DEST" -xf -
 
-# Without this the app loads and then fails on the first compile with a 404.
-[[ -f "${DEST}/compile-worker.js" ]] ||
-  { echo "error: compile-worker.js missing from the build — run the app's build" >&2; exit 1; }
+# Take the compile worker from the package that builds it rather than from whatever
+# copy is sitting in the app's output. A stale copy there once shipped a CommonJS build
+# of the worker, which a module worker rejects with "exports is not defined" — and since
+# the worker then never replies, the IDE simply waits on "Compiling…" forever.
+WORKER="${REPO_ROOT}/packages/runtime/dist/compile-worker.js"
+[[ -f "$WORKER" ]] ||
+  { echo "error: ${WORKER} missing — build @yukibana/runtime first" >&2; exit 1; }
+cp "$WORKER" "${DEST}/compile-worker.js"
+
+head -c 2 "${DEST}/compile-worker.js" | grep -q . ||
+  { echo "error: staged compile worker is empty" >&2; exit 1; }
 
 # The app reads this at startup, so the toolchain can move without a rebuild.
 printf '{\n  "baseUrl": "%s"\n}\n' "$TOOLCHAIN_BASE_URL" > "${DEST}/toolchain.json"

@@ -123,9 +123,27 @@ export class YukibanaContribution implements CommandContribution, MenuContributi
       durationMs: number;
       unavailable?: string;
     }>((resolve) => {
+      // A worker that fails to load never answers, and without this the command would
+      // sit on "Compiling…" indefinitely. That is how a stale CommonJS bundle of the
+      // worker presented itself: silence, rather than the error it actually was.
+      const onError = (event: ErrorEvent | Event) => {
+        worker.removeEventListener("error", onError);
+        this.worker = undefined; // Let the next attempt build a fresh one.
+        const detail = "message" in event && event.message ? `: ${event.message}` : "";
+        resolve({
+          success: false,
+          diagnostics: [],
+          log: "",
+          durationMs: 0,
+          unavailable: `the compile worker failed to start${detail}`,
+        });
+      };
+      worker.addEventListener("error", onError);
+
       const onMessage = (event: MessageEvent<CompileWorkerResponse>) => {
         if (event.data.id !== id) return;
         worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
         const data = event.data;
         resolve({
           success: data.ok,
