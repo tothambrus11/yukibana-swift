@@ -27,7 +27,14 @@ rm -rf "$DEST"
 mkdir -p "$DEST"
 
 # Copy everything except the two categories that cannot be hosted.
-tar -C "$SRC" --exclude='toolchain' --exclude='*.map' -cf - . | tar -C "$DEST" -xf -
+# *.map.gz too: a production build pre-compresses its source maps, and those are just
+# as useless in production as the maps themselves — 15 MiB of them here.
+tar -C "$SRC" --exclude='toolchain' --exclude='*.map' --exclude='*.map.gz' -cf - . \
+  | tar -C "$DEST" -xf -
+
+# Without this the app loads and then fails on the first compile with a 404.
+[[ -f "${DEST}/compile-worker.js" ]] ||
+  { echo "error: compile-worker.js missing from the build — run the app's build" >&2; exit 1; }
 
 # The app reads this at startup, so the toolchain can move without a rebuild.
 printf '{\n  "baseUrl": "%s"\n}\n' "$TOOLCHAIN_BASE_URL" > "${DEST}/toolchain.json"
