@@ -8,6 +8,10 @@ import { FileService } from "@theia/filesystem/lib/browser/file-service";
 import { OutputChannelManager, OutputChannelSeverity } from "@theia/output/lib/browser/output-channel";
 import { VirtualFS, runWasi } from "@yukibana/runtime";
 import type { CompilerBackend } from "@yukibana/runtime";
+import type {
+  CompileWorkerRequest,
+  CompileWorkerResponse,
+} from "@yukibana/runtime/dist/compile-worker";
 
 export const BuildAndRunSwift: Command = {
   id: "yukibana.buildAndRun",
@@ -76,6 +80,49 @@ export class YukibanaContribution implements CommandContribution, MenuContributi
     return undefined;
   }
 
+  /**
+   * Compilation runs in a worker, never on the UI thread.
+   *
+   * The toolchain is a 146 MiB module to compile and a 99 MiB sysroot to unpack. Doing
+   * that inline does not merely jank the shell — it starves rendering badly enough that
+   * the work appears never to finish. The worker is a single pre-bundled file because
+   * Theia's bundler does not handle `new Worker(new URL(...))`.
+   */
+  protected worker?: Worker;
+  protected nextRequestId = 0;
+
+  protected compileInWorker(path: string, text: string) {
+    this.worker ??= new Worker("/compile-worker.js", { type: "module" });
+    const worker = this.worker;
+    const id = this.nextRequestId++;
+
+    return new Promise<{
+      success: boolean;
+      wasm?: Uint8Array;
+      diagnostics: CompileWorkerResponse["diagnostics"];
+      log: string;
+      durationMs: number;
+      unavailable?: string;
+    }>((resolve) => {
+      const onMessage = (event: MessageEvent<CompileWorkerResponse>) => {
+        if (event.data.id !== id) return;
+        worker.removeEventListener("message", onMessage);
+        const data = event.data;
+        resolve({
+          success: data.ok,
+          wasm: data.wasm ? new Uint8Array(data.wasm) : undefined,
+          diagnostics: data.diagnostics,
+          log: data.log,
+          durationMs: data.durationMs,
+          unavailable: data.unavailable,
+        });
+      };
+      worker.addEventListener("message", onMessage);
+      const request: CompileWorkerRequest = { id, sources: { [path]: text } };
+      worker.postMessage(request);
+    });
+  }
+
   protected async buildAndRun(): Promise<void> {
     const source = await this.resolveSource();
     if (!source) {
@@ -90,7 +137,15 @@ export class YukibanaContribution implements CommandContribution, MenuContributi
     const path = source.path;
     channel.appendLine(`Compiling ${path} with the ${this.backend.description} backend…`);
 
-    const result = await this.backend.compile({ sources: { [path]: source.text } });
+    const result = await this.compileInWorker(path, source.text);
+
+    if (result.unavailable) {
+      channel.appendLine(result.unavailable, OutputChannelSeverity.Error);
+      channel.appendLine(
+        "Build the toolchain (see the swift-toolchain-wasm repository) and serve it at /toolchain.",
+      );
+      return;
+    }
 
     for (const diagnostic of result.diagnostics) {
       const where =

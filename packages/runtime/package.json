@@ -11,16 +11,21 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "npm run build && node --test test/*.test.js"
+    "build": "tsc && npm run bundle:worker",
+    "test": "npm run build && node --test test/*.test.js",
+    "bundle:worker": "esbuild src/compile-worker.ts --bundle --format=esm --platform=browser --outfile=dist/compile-worker.js"
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "esbuild": "^0.25.0"
   },
   "license": "MIT"
 }
