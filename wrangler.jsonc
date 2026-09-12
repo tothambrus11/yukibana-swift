@@ -27,12 +27,14 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
-  // Points at the prebuilt artifacts branch while the release build finishes. The
-  // Worker prefers a <name>.gz next to each artifact, so this serves 69 MiB per cold
-  // visit rather than 302 MiB. Move it to
-  // https://github.com/tothambrus11/swift-toolchain-wasm/releases/latest/download once a
-  // release is published — the release carries .gz files too, so nothing else changes.
+  // The release that built the artifacts serves them, so the bytes cannot drift from
+  // the build they came from. `latest` follows a rebuild of the same Swift release
+  // without a change here. The Worker prefers a <name>.gz next to each artifact — the
+  // release carries those too — so a cold visit moves 69 MiB rather than 302 MiB.
+  // To roll back, point this at
+  // https://raw.githubusercontent.com/tothambrus11/swift-toolchain-wasm/toolchain-artifacts
+  // which holds the same three artifacts on an orphan branch.
   "vars": {
-    "TOOLCHAIN_RELEASE": "https://raw.githubusercontent.com/tothambrus11/swift-toolchain-wasm/toolchain-artifacts"
+    "TOOLCHAIN_RELEASE": "https://github.com/tothambrus11/swift-toolchain-wasm/releases/latest/download"
   }
 }
